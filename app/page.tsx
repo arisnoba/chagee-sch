@@ -19,6 +19,20 @@ function PreferenceBadge({ label, value }: { label: string; value: string }) {
   );
 }
 
+type Tier = "보상 우선" | "양호" | "꿀";
+
+function getTier(score: number, thresholds: { low: number; high: number }): Tier {
+  if (score >= thresholds.high) return "보상 우선";
+  if (score <= thresholds.low) return "꿀";
+  return "양호";
+}
+
+function getTierStyle(tier: Tier) {
+  if (tier === "보상 우선") return { badge: "destructive" as const, bar: "#ef4444" };
+  if (tier === "꿀") return { badge: null, bar: "#eab308", className: "bg-yellow-100 text-yellow-800 border border-yellow-300" };
+  return { badge: "secondary" as const, bar: "#6b7280" };
+}
+
 export default function DashboardPage() {
   const [scores, setScores] = useState<EmployeeWithScore[]>([]);
   const [loading, setLoading] = useState(true);
@@ -39,9 +53,29 @@ export default function DashboardPage() {
     setSeeding(false);
   }
 
-  useEffect(() => { loadScores(); }, []);
+  useEffect(() => {
+    let ignore = false;
 
-  const maxScore = Math.max(...scores.map((s) => s.fairnessScore), 1);
+    fetch("/api/fairness")
+      .then((res) => res.ok ? res.json() : [])
+      .then((data) => {
+        if (ignore) return;
+        setScores(data);
+        setLoading(false);
+      });
+
+    return () => { ignore = true; };
+  }, []);
+
+  // 3단계 티어 임계값: 하위 1/3 = 꿀, 상위 1/3 = 보상우선
+  const sortedAsc = [...scores].map((e) => e.fairnessScore).sort((a, b) => a - b);
+  const n = sortedAsc.length;
+  const thresholds = {
+    low: n > 0 ? (sortedAsc[Math.ceil(n / 3) - 1] ?? 0) : 0,   // 꿀: score <= low
+    high: n > 0 ? (sortedAsc[Math.floor(2 * n / 3)] ?? 0) : 0, // 보상우선: score >= high
+  };
+
+  const chartData = [...scores].reverse();
 
   return (
     <div className="space-y-8">
@@ -56,6 +90,9 @@ export default function DashboardPage() {
           </Button>
           <Link href="/schedule/generate">
             <Button>근무표 생성하기 →</Button>
+          </Link>
+          <Link href="/schedule/month">
+            <Button variant="outline">월간 근무표</Button>
           </Link>
         </div>
       </div>
@@ -73,6 +110,25 @@ export default function DashboardPage() {
         </Card>
       ) : (
         <>
+          {/* 티어 범례 */}
+          <div className="flex gap-3 flex-wrap">
+            <div className="flex items-center gap-1.5 text-sm">
+              <span className="w-3 h-3 rounded-full bg-red-500 inline-block" />
+              <span className="font-medium text-red-700">보상 우선</span>
+              <span className="text-gray-500">— 힘든 근무를 많이 소화한 직원, 다음 배정 우선권</span>
+            </div>
+            <div className="flex items-center gap-1.5 text-sm">
+              <span className="w-3 h-3 rounded-full bg-gray-400 inline-block" />
+              <span className="font-medium text-gray-600">양호</span>
+              <span className="text-gray-500">— 균형 잡힌 상태</span>
+            </div>
+            <div className="flex items-center gap-1.5 text-sm">
+              <span className="w-3 h-3 rounded-full bg-yellow-400 inline-block" />
+              <span className="font-medium text-yellow-700">꿀</span>
+              <span className="text-gray-500">— 좋은 근무 위주, 다음 배정 시 고려 필요</span>
+            </div>
+          </div>
+
           <Card>
             <CardHeader>
               <CardTitle className="text-base font-semibold">
@@ -80,8 +136,8 @@ export default function DashboardPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={[...scores].reverse()} layout="vertical" margin={{ left: 8, right: 40 }}>
+              <ResponsiveContainer width="100%" height={360}>
+                <BarChart data={chartData} layout="vertical" margin={{ left: 8, right: 48 }}>
                   <XAxis type="number" tick={{ fontSize: 12 }} />
                   <YAxis dataKey="name" type="category" width={72} tick={{ fontSize: 13 }} />
                   <Tooltip
@@ -91,11 +147,7 @@ export default function DashboardPage() {
                     }}
                     cursor={{ fill: "#f3f4f6" }}
                   />
-                  <Bar
-                    dataKey="fairnessScore"
-                    radius={[0, 4, 4, 0]}
-                    fill="#22c55e"
-                  />
+                  <Bar dataKey="fairnessScore" radius={[0, 4, 4, 0]} fill="#22c55e" />
                 </BarChart>
               </ResponsiveContainer>
             </CardContent>
@@ -110,36 +162,40 @@ export default function DashboardPage() {
                 <thead className="bg-gray-50 border-b">
                   <tr>
                     <th className="text-left px-4 py-3 font-medium text-gray-600">이름</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-600">고용형태</th>
                     <th className="text-left px-4 py-3 font-medium text-gray-600">파트 성향</th>
                     <th className="text-right px-4 py-3 font-medium text-gray-600">공평 지표</th>
                     <th className="text-left px-4 py-3 font-medium text-gray-600">상태</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {scores.map((emp) => (
-                    <tr key={emp.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 font-medium">{emp.name}</td>
-                      <td className="px-4 py-3 text-gray-500">
-                        {emp.employmentType === "fulltime" ? "풀타임" : "파트타임"}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="flex gap-1 flex-wrap">
-                          <PreferenceBadge label="오픈" value={emp.openPreference} />
-                          <PreferenceBadge label="미들" value={emp.middlePreference} />
-                          <PreferenceBadge label="마감" value={emp.closePreference} />
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-right font-mono font-semibold">
-                        {emp.fairnessScore.toFixed(1)}
-                      </td>
-                      <td className="px-4 py-3">
-                        <Badge variant={emp.fairnessScore >= maxScore * 0.65 ? "destructive" : "secondary"}>
-                          {emp.fairnessScore >= maxScore * 0.65 ? "보상 우선" : "양호"}
-                        </Badge>
-                      </td>
-                    </tr>
-                  ))}
+                  {scores.map((emp) => {
+                    const tier = getTier(emp.fairnessScore, thresholds);
+                    const style = getTierStyle(tier);
+                    return (
+                      <tr key={emp.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-3 font-medium">{emp.name}</td>
+                        <td className="px-4 py-3">
+                          <span className="flex gap-1 flex-wrap">
+                            <PreferenceBadge label="오픈" value={emp.openPreference} />
+                            <PreferenceBadge label="미들" value={emp.middlePreference} />
+                            <PreferenceBadge label="마감" value={emp.closePreference} />
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-right font-mono font-semibold">
+                          {emp.fairnessScore.toFixed(1)}
+                        </td>
+                        <td className="px-4 py-3">
+                          {style.badge ? (
+                            <Badge variant={style.badge}>{tier}</Badge>
+                          ) : (
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${style.className}`}>
+                              {tier}
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </CardContent>

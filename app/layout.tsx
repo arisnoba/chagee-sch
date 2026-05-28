@@ -27,8 +27,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <Link href="/schedule/generate" className="text-sm text-gray-600 hover:text-gray-900">
             근무표 생성
           </Link>
+          <Link href="/schedule/month" className="text-sm text-gray-600 hover:text-gray-900">
+            월간 근무표
+          </Link>
         </nav>
-        <main className="max-w-6xl mx-auto w-full px-6 py-8">{children}</main>
+        <main className="mx-auto w-full px-6 py-8">{children}</main>
       </body>
     </html>
   );
