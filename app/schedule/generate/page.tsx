@@ -69,7 +69,7 @@ function getDayEmployees(day: DaySchedule): ScheduleEmployee[] {
     employees.set(employee.employeeId, employee);
   }
 
-  return [...employees.values()];
+  return [...employees.values()].sort((a, b) => a.employeeName.localeCompare(b.employeeName, "ko"));
 }
 
 function getConsecutiveOffNames(days: DaySchedule[]): string[] {
