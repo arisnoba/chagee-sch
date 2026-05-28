@@ -6,8 +6,8 @@ export type DaySchedule = {
   dayType: DayType;
   dayLabel: string;
   holidayName?: string;
-  slots: { shiftType: ShiftType; employeeId: number; employeeName: string }[];
-  offEmployees: { employeeId: number; employeeName: string }[];
+  slots: { shiftType: ShiftType; employeeId: number; employeeName: string; reasons?: string[] }[];
+  offEmployees: { employeeId: number; employeeName: string; reasons?: string[] }[];
 };
 
 const DAY_LABELS = ["일", "월", "화", "수", "목", "금", "토"];
@@ -60,29 +60,66 @@ function getShiftPreferenceOrder(emp: Employee): ("open" | "middle" | "close")[]
     .map((x) => x.s);
 }
 
+function getPreferenceLabel(emp: Employee, shift: "open" | "middle" | "close"): string {
+  const preference = shift === "open"
+    ? emp.openPreference
+    : shift === "middle"
+    ? emp.middlePreference
+    : emp.closePreference;
+
+  if (preference === "like") return "선호 파트";
+  if (preference === "dislike") return "기피 파트 보상 반영";
+  return "보통 성향";
+}
+
+function getShiftReasons(
+  emp: EmployeeWithScore,
+  shift: "open" | "middle" | "close",
+  previousCloseIds: Set<number>
+): string[] {
+  const reasons = [`공평 지표 ${emp.fairnessScore.toFixed(1)}점`];
+  reasons.push(getPreferenceLabel(emp, shift));
+
+  if (shift === "close") reasons.push("마감 인원 우선 배정");
+  if (previousCloseIds.has(emp.id) && shift !== "open") reasons.push("마감 다음날 오픈 회피");
+
+  return reasons;
+}
+
 // 공정성 순으로 정렬된 직원들을 오픈/미들/마감에 배분 (휴무 제외 전원 투입)
-function assignShifts(rankedWorkers: EmployeeWithScore[]): DaySchedule["slots"] {
+function assignShifts(
+  rankedWorkers: EmployeeWithScore[],
+  previousCloseIds: Set<number> = new Set()
+): DaySchedule["slots"] {
   const W = rankedWorkers.length;
   if (W === 0) return [];
 
   const extra = W % 3;
   const base = Math.floor(W / 3);
-  // 나머지 인원: 미들에 먼저, 그 다음 오픈에 배분
+  // 나머지 인원: 마감에 먼저, 그 다음 미들에 배분해 오픈보다 마감 인원을 두텁게 둔다.
   const cap = {
-    open: base + (extra >= 2 ? 1 : 0),
-    middle: base + (extra >= 1 ? 1 : 0),
-    close: base,
+    open: base,
+    middle: base + (extra >= 2 ? 1 : 0),
+    close: base + (extra >= 1 ? 1 : 0),
   };
 
   const slots: DaySchedule["slots"] = [];
 
   for (const emp of rankedWorkers) {
     const prefOrder = getShiftPreferenceOrder(emp);
+    const shiftOrder = previousCloseIds.has(emp.id)
+      ? [...prefOrder.filter((shift) => shift !== "open"), "open" as const]
+      : prefOrder;
     let assigned = false;
 
-    for (const shift of prefOrder) {
+    for (const shift of shiftOrder) {
       if (cap[shift] > 0) {
-        slots.push({ shiftType: shift, employeeId: emp.id, employeeName: emp.name });
+        slots.push({
+          shiftType: shift,
+          employeeId: emp.id,
+          employeeName: emp.name,
+          reasons: getShiftReasons(emp, shift, previousCloseIds),
+        });
         cap[shift]--;
         assigned = true;
         break;
@@ -90,9 +127,14 @@ function assignShifts(rankedWorkers: EmployeeWithScore[]): DaySchedule["slots"] 
     }
 
     if (!assigned) {
-      for (const shift of ["open", "middle", "close"] as const) {
+      for (const shift of ["close", "middle", "open"] as const) {
         if (cap[shift] > 0) {
-          slots.push({ shiftType: shift, employeeId: emp.id, employeeName: emp.name });
+          slots.push({
+            shiftType: shift,
+            employeeId: emp.id,
+            employeeName: emp.name,
+            reasons: getShiftReasons(emp, shift, previousCloseIds),
+          });
           cap[shift]--;
           break;
         }
@@ -146,6 +188,21 @@ function assignOffDays(
   return result;
 }
 
+function getOffReasons(emp: EmployeeWithScore, day: WeekDay, pickedDates: string[]): string[] {
+  const reasons = [`공평 지표 ${emp.fairnessScore.toFixed(1)}점`];
+  reasons.push("주 2회 휴무 목표");
+
+  if (day.dayType === "holiday") reasons.push("공휴일 휴무 우선");
+  if (day.dayType === "weekend") reasons.push("주말 휴무 우선");
+
+  const hasAdjacentOff = pickedDates.some(
+    (pickedDate) => Math.abs(new Date(day.date).getTime() - new Date(pickedDate).getTime()) === 86400000
+  );
+  if (!hasAdjacentOff) reasons.push("연속 휴무 회피");
+
+  return reasons;
+}
+
 export function generateWeekSchedule(
   weekStart: Date,
   employees: Employee[],
@@ -184,10 +241,21 @@ export function generateWeekSchedule(
         .map((e) => e.id)
     );
     const workingEmps = employees.filter((e) => !offIds.has(e.id));
-    const offEmps = employees.filter((e) => offIds.has(e.id));
+    const offEmps = rankByFairness(
+      employees.filter((e) => offIds.has(e.id)),
+      workingLogs
+    );
 
     const ranked = rankByFairness(workingEmps, workingLogs);
-    const slots = assignShifts(ranked);
+    const previousDate = new Date(day.date);
+    previousDate.setDate(previousDate.getDate() - 1);
+    const previousDateString = previousDate.toISOString().slice(0, 10);
+    const previousCloseIds = new Set(
+      workingLogs
+        .filter((log) => log.date === previousDateString && log.shiftType === "close")
+        .map((log) => log.employeeId)
+    );
+    const slots = assignShifts(ranked, previousCloseIds);
 
     for (const slot of slots) {
       workingLogs.push({
@@ -208,7 +276,15 @@ export function generateWeekSchedule(
       dayLabel: day.dayLabel,
       holidayName: day.holidayName,
       slots,
-      offEmployees: offEmps.map((e) => ({ employeeId: e.id, employeeName: e.name })),
+      offEmployees: offEmps.map((e) => ({
+        employeeId: e.id,
+        employeeName: e.name,
+        reasons: getOffReasons(
+          e,
+          day,
+          (offDayMap[e.id] ?? []).filter((date) => date !== day.date)
+        ),
+      })),
     };
   });
 }

@@ -10,7 +10,7 @@ import type { DaySchedule } from "@/lib/scheduler/generate";
 import type { ShiftType } from "@/lib/scheduler/fairness";
 
 const MAX_OFF_PER_DAY = 4;
-const WORK_SHIFT_TYPES = ["open", "middle", "close"] as const;
+const WORK_SHIFT_TYPES = ["close", "middle", "open"] as const;
 const EDIT_SHIFT_TYPES = ["open", "middle", "close", "off"] as const;
 const SHIFT_LABELS: Record<ShiftType, string> = { open: "오픈", middle: "미들", close: "마감", off: "휴무" };
 const SHIFT_STYLES: Record<ShiftType, string> = {
@@ -21,13 +21,11 @@ const SHIFT_STYLES: Record<ShiftType, string> = {
 };
 
 type WorkShiftType = Exclude<ShiftType, "off">;
-type ScheduleEmployee = { employeeId: number; employeeName: string };
+type ScheduleEmployee = { employeeId: number; employeeName: string; reasons?: string[] };
 
-function getMonday(date: Date): Date {
+function getSunday(date: Date): Date {
   const d = new Date(date);
-  const day = d.getDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  d.setDate(d.getDate() + diff);
+  d.setDate(d.getDate() - d.getDay());
   return d;
 }
 
@@ -35,10 +33,10 @@ function formatDate(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-function getWeekLabel(monday: Date): string {
-  const start = new Date(monday.getFullYear(), 0, 1);
-  const week = Math.ceil(((monday.getTime() - start.getTime()) / 86400000 + start.getDay() + 1) / 7);
-  return `${monday.getFullYear()}-W${String(week).padStart(2, "0")}`;
+function getWeekLabel(sunday: Date): string {
+  const start = new Date(sunday.getFullYear(), 0, 1);
+  const week = Math.ceil(((sunday.getTime() - start.getTime()) / 86400000 + start.getDay() + 1) / 7);
+  return `${sunday.getFullYear()}-W${String(week).padStart(2, "0")}`;
 }
 
 function toCalendarDays(days: DaySchedule[]): CalendarDay[] {
@@ -63,7 +61,11 @@ function getDayEmployees(day: DaySchedule): ScheduleEmployee[] {
   const employees = new Map<number, ScheduleEmployee>();
 
   for (const slot of day.slots) {
-    employees.set(slot.employeeId, { employeeId: slot.employeeId, employeeName: slot.employeeName });
+    employees.set(slot.employeeId, {
+      employeeId: slot.employeeId,
+      employeeName: slot.employeeName,
+      reasons: slot.reasons,
+    });
   }
   for (const employee of day.offEmployees) {
     employees.set(employee.employeeId, employee);
@@ -96,6 +98,29 @@ function getConsecutiveOffNames(days: DaySchedule[]): string[] {
   return [...new Set(names)].sort((a, b) => a.localeCompare(b, "ko"));
 }
 
+function getCloseOpenNames(days: DaySchedule[]): string[] {
+  const sortedDays = [...days].sort((a, b) => a.date.localeCompare(b.date));
+  const names: string[] = [];
+
+  for (let index = 1; index < sortedDays.length; index++) {
+    const previousDay = sortedDays[index - 1];
+    const currentDay = sortedDays[index];
+    const previousCloseIds = new Set(
+      previousDay.slots
+        .filter((slot) => slot.shiftType === "close")
+        .map((slot) => slot.employeeId)
+    );
+
+    for (const slot of currentDay.slots) {
+      if (slot.shiftType === "open" && previousCloseIds.has(slot.employeeId)) {
+        names.push(slot.employeeName);
+      }
+    }
+  }
+
+  return [...new Set(names)].sort((a, b) => a.localeCompare(b, "ko"));
+}
+
 function getEmployeeShift(day: DaySchedule, employeeId: number): ShiftType {
   if (day.offEmployees.some((employee) => employee.employeeId === employeeId)) return "off";
   return day.slots.find((slot) => slot.employeeId === employeeId)?.shiftType ?? "middle";
@@ -113,21 +138,50 @@ function getLeastLoadedWorkShift(day: DaySchedule, excludeShift?: ShiftType): Wo
 function moveEmployeeToShift(day: DaySchedule, employee: ScheduleEmployee, shiftType: ShiftType): DaySchedule {
   const slots = day.slots.filter((slot) => slot.employeeId !== employee.employeeId);
   const offEmployees = day.offEmployees.filter((offEmployee) => offEmployee.employeeId !== employee.employeeId);
+  const nextEmployee = {
+    employeeId: employee.employeeId,
+    employeeName: employee.employeeName,
+    reasons: ["점장 수동 조정"],
+  };
 
   if (shiftType === "off") {
-    return { ...day, slots, offEmployees: [...offEmployees, employee] };
+    return { ...day, slots, offEmployees: [...offEmployees, nextEmployee] };
   }
 
   return {
     ...day,
-    slots: [...slots, { shiftType, ...employee }],
+    slots: [...slots, { shiftType, ...nextEmployee }],
     offEmployees,
   };
 }
 
+function getSelectedDayAssignments(day: DaySchedule): {
+  shiftType: ShiftType;
+  employeeName: string;
+  reasons: string[];
+}[] {
+  return [
+    ...day.slots.map((slot) => ({
+      shiftType: slot.shiftType,
+      employeeName: slot.employeeName,
+      reasons: slot.reasons ?? [],
+    })),
+    ...day.offEmployees.map((employee) => ({
+      shiftType: "off" as const,
+      employeeName: employee.employeeName,
+      reasons: employee.reasons ?? [],
+    })),
+  ].sort((a, b) => {
+    const shiftOrder: Record<ShiftType, number> = { open: 0, middle: 1, close: 2, off: 3 };
+    const shiftDiff = shiftOrder[a.shiftType] - shiftOrder[b.shiftType];
+    if (shiftDiff !== 0) return shiftDiff;
+    return a.employeeName.localeCompare(b.employeeName, "ko");
+  });
+}
+
 export default function GeneratePage() {
   const router = useRouter();
-  const [selectedDate, setSelectedDate] = useState(() => formatDate(getMonday(new Date())));
+  const [selectedDate, setSelectedDate] = useState(() => formatDate(getSunday(new Date())));
   const [preview, setPreview] = useState<DaySchedule[] | null>(null);
   const [weekLabel, setWeekLabel] = useState("");
   const [generating, setGenerating] = useState(false);
@@ -136,6 +190,7 @@ export default function GeneratePage() {
   const [selectedEditDate, setSelectedEditDate] = useState("");
   const [selectedShift, setSelectedShift] = useState<ShiftType>("off");
   const consecutiveOffNames = useMemo(() => preview ? getConsecutiveOffNames(preview) : [], [preview]);
+  const closeOpenNames = useMemo(() => preview ? getCloseOpenNames(preview) : [], [preview]);
   const selectedDay = useMemo(
     () => preview?.find((day) => day.date === selectedEditDate) ?? preview?.[0],
     [preview, selectedEditDate]
@@ -143,8 +198,8 @@ export default function GeneratePage() {
 
   async function handleGenerate() {
     setGenerating(true);
-    const monday = new Date(selectedDate);
-    const label = getWeekLabel(monday);
+    const sunday = new Date(selectedDate);
+    const label = getWeekLabel(sunday);
     setWeekLabel(label);
 
     const res = await fetch("/api/schedule/generate", {
@@ -223,7 +278,7 @@ export default function GeneratePage() {
       <Card>
         <CardContent className="pt-6 flex items-end gap-4">
           <div className="space-y-1">
-            <label className="text-sm font-medium text-gray-700">시작 날짜 (월요일)</label>
+            <label className="text-sm font-medium text-gray-700">시작 날짜 (일요일)</label>
             <input
               type="date"
               value={selectedDate}
@@ -237,6 +292,22 @@ export default function GeneratePage() {
           <Link href={`/schedule/month?month=${selectedDate.slice(0, 7)}`}>
             <Button variant="outline">월간 근무표</Button>
           </Link>
+        </CardContent>
+      </Card>
+
+      <Card className="border-blue-100 bg-blue-50/60">
+        <CardContent className="pt-4 pb-4">
+          <p className="text-sm font-semibold text-blue-900">근무표 생성 룰</p>
+          <div className="mt-3 grid gap-2 text-sm text-blue-800 md:grid-cols-2">
+            <p>휴무는 하루 최대 4명까지만 배정합니다.</p>
+            <p>직원별 주 2회 휴무를 목표로 하되, 슬롯이 부족하면 일부 직원은 1회가 될 수 있습니다.</p>
+            <p>이틀 연속 휴무는 가능한 피하고, 필요할 때만 허용합니다.</p>
+            <p>마감 다음날 오픈은 가능한 피하고, 직접 수정 시 경고로 표시합니다.</p>
+            <p>오픈보다 마감 인원을 더 두텁게 배정합니다.</p>
+            <p>공평 지표가 높은 직원은 선호 파트와 좋은 휴무를 우선 배정합니다.</p>
+            <p>파트 성향은 부담 점수에 반영합니다.</p>
+            <p>점장은 초안에서 날짜와 파트를 선택해 인원을 직접 조정할 수 있습니다.</p>
+          </div>
         </CardContent>
       </Card>
 
@@ -273,6 +344,9 @@ export default function GeneratePage() {
                 </div>
                 {consecutiveOffNames.length > 0 && (
                   <p className="text-xs text-amber-600">연속 휴무: {consecutiveOffNames.join(", ")}</p>
+                )}
+                {closeOpenNames.length > 0 && (
+                  <p className="text-xs text-red-500">마감 후 오픈: {closeOpenNames.join(", ")}</p>
                 )}
               </div>
 
@@ -321,20 +395,32 @@ export default function GeneratePage() {
                   );
                 })}
               </div>
+
+              <div className="mt-5 border-t border-gray-100 pt-4">
+                <p className="text-sm font-medium text-gray-700">배치 근거</p>
+                <div className="mt-2 grid gap-2 md:grid-cols-2">
+                  {getSelectedDayAssignments(selectedDay).map((assignment) => (
+                    <div
+                      key={`${assignment.shiftType}-${assignment.employeeName}`}
+                      className="rounded-md border border-gray-100 bg-gray-50 px-3 py-2"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className={`rounded border px-1.5 py-0.5 text-[11px] font-medium ${SHIFT_STYLES[assignment.shiftType]}`}>
+                          {SHIFT_LABELS[assignment.shiftType]}
+                        </span>
+                        <span className="text-sm font-medium text-gray-800">{assignment.employeeName}</span>
+                      </div>
+                      <p className="mt-1 text-xs leading-5 text-gray-500">
+                        {assignment.reasons.length > 0 ? assignment.reasons.join(" · ") : "자동 배치"}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </CardContent>
           </Card>
           )}
 
-          <Card className="bg-blue-50 border-blue-200">
-            <CardContent className="pt-4 pb-4">
-              <p className="text-sm text-blue-800 font-medium">💡 생성 기준</p>
-              <p className="text-sm text-blue-700 mt-1">
-                공평 지표가 높은 직원(보상 우선)부터 선호 파트를 우선 배정합니다.
-                주말·공휴일 휴무도 보상 우선 직원에게 먼저 돌아갑니다.
-                성향(👍/👎)은 부담 가중치에 ×0.5/×1.5로 반영됩니다.
-              </p>
-            </CardContent>
-          </Card>
         </>
       )}
     </div>

@@ -27,7 +27,7 @@ export const shiftLogs = sqliteTable("shift_logs", {
 export const schedules = sqliteTable("schedules", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   weekLabel: text("week_label").notNull().unique(), // e.g. "2025-W20"
-  startDate: text("start_date").notNull(), // YYYY-MM-DD (Monday)
+  startDate: text("start_date").notNull(), // YYYY-MM-DD (Sunday)
   status: text("status", { enum: ["draft", "confirmed"] }).notNull().default("draft"),
   createdAt: text("created_at").default(sql`(datetime('now'))`),
   confirmedAt: text("confirmed_at"),

@@ -24,73 +24,126 @@ const MOCK_EMPLOYEES = [
   { name: "백승민", employmentType: "fulltime" as const, availableDays: ALL_DAYS, openPreference: "like" as const, middlePreference: "neutral" as const, closePreference: "neutral" as const },
 ];
 
-function generatePastLogs(empIds: number[]) {
-  // 인덱스 매핑
-  const [jh, sw, de, sy, ja, mj, yn, jr, sh, oj, hk, ms, dh, cw, sm] = empIds;
+const SEED_HOLIDAYS = new Set(["2026-05-05", "2026-05-15"]);
 
-  const closeHeavy = [jh, sw, de];   // 마감/기피 → 보상우선
-  const openHeavy  = [sy, ja];       // 오픈/기피 → 보상우선
-  const mixedYangho = [mj, yn, jr, sh, oj]; // 중립 혼합 → 양호
-  const favClose = [hk, cw];         // 마감/선호 + 주말 휴무 → 꿀
-  const favOpen  = [ms, sm];         // 오픈/선호 + 주말 휴무 → 꿀
-  const favMiddle = [dh];            // 미들/선호 → 꿀
+const SEED_WEEK_STARTS = [
+  { weekLabel: "2026-W14", startDate: "2026-03-29" },
+  { weekLabel: "2026-W15", startDate: "2026-04-05" },
+  { weekLabel: "2026-W16", startDate: "2026-04-12" },
+  { weekLabel: "2026-W17", startDate: "2026-04-19" },
+  { weekLabel: "2026-W18", startDate: "2026-04-26" },
+  { weekLabel: "2026-W19", startDate: "2026-05-03" },
+  { weekLabel: "2026-W20", startDate: "2026-05-10" },
+  { weekLabel: "2026-W21", startDate: "2026-05-17" },
+];
 
-  const HOLIDAYS = new Set(["2026-05-05", "2026-05-15"]);
-  const rotations = ["open", "middle", "close"] as const;
-  const logs: {
-    employeeId: number;
-    date: string;
-    shiftType: "open" | "middle" | "close" | "off";
-    dayType: "weekday" | "weekend" | "holiday";
-    weekLabel: string;
-    isConfirmed: boolean;
-  }[] = [];
+const SEED_LOG_START_DATE = "2026-04-01";
+const SEED_LOG_END_DATE = "2026-05-23";
+const DAILY_STAFFING = {
+  off: 4,
+  open: 3,
+  middle: 4,
+  close: 4,
+} as const;
 
-  // 4주 전 월요일 기준
-  const startDate = new Date("2026-04-28");
+type ShiftType = "open" | "middle" | "close" | "off";
 
-  for (let week = 0; week < 4; week++) {
-    const weekLabel = `2026-W${String(week + 18).padStart(2, "0")}`;
+type SeedShiftLog = {
+  employeeId: number;
+  date: string;
+  shiftType: ShiftType;
+  dayType: "weekday" | "weekend" | "holiday";
+  weekLabel: string;
+  isConfirmed: boolean;
+};
 
-    for (let d = 0; d < 7; d++) {
-      const date = new Date(startDate);
-      date.setDate(date.getDate() + week * 7 + d);
-      const dateStr = date.toISOString().slice(0, 10);
-      const dow = date.getDay();
-      const isHoliday = HOLIDAYS.has(dateStr);
-      const isWeekend = dow === 0 || dow === 6;
-      const dayType = isHoliday ? "holiday" : isWeekend ? "weekend" : "weekday";
+function formatDate(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
 
-      const push = (empId: number, shiftType: "open" | "middle" | "close" | "off") =>
-        logs.push({ employeeId: empId, date: dateStr, shiftType, dayType, weekLabel, isConfirmed: true });
+function getDayType(date: string): "weekday" | "weekend" | "holiday" {
+  if (SEED_HOLIDAYS.has(date)) return "holiday";
 
-      // 보상우선: 쉬는 날 없이 기피 파트 집중 투입
-      for (const id of closeHeavy) push(id, "close");
-      for (const id of openHeavy)  push(id, "open");
+  const day = new Date(date).getDay();
+  return day === 0 || day === 6 ? "weekend" : "weekday";
+}
 
-      // 꿀: 주말/공휴일 휴무도 하루 최대 4명까지만 배정
-      for (const id of favClose)  push(id, isHoliday || isWeekend ? "off" : "close");
-      for (const id of favOpen)   push(id, isHoliday || isWeekend ? "off" : "open");
-      for (const id of favMiddle) push(id, "middle");
+function getWeekLabel(date: string): string {
+  const target = new Date(date);
+  const sunday = new Date(target);
+  sunday.setDate(target.getDate() - target.getDay());
 
-      // 양호: 주말 근무 포함, 평일 중 이틀만 휴무, 나머지는 순환 배정
-      // (보상우선보다는 나은 상황이지만 주말 혜택은 없음 → 중간 점수)
-      for (let i = 0; i < mixedYangho.length; i++) {
-        const id = mixedYangho[i];
-        const globalDay = week * 7 + d;
-        // 각 직원마다 다른 평일(Mon=0 ~ Fri=4)에 휴무
-        const offA = (i * 2) % 5;
-        const offB = (i * 2 + 1) % 5;
-        if (!isHoliday && !isWeekend && (d === offA || d === offB)) {
-          push(id, "off"); // 평일 휴무만
-        } else {
-          push(id, rotations[(globalDay + i) % 3]); // 주말/공휴일에도 근무
-        }
-      }
+  const schedule = SEED_WEEK_STARTS.find((week) => week.startDate === formatDate(sunday));
+  return schedule?.weekLabel ?? "2026-W00";
+}
+
+function seededScore(date: string, employeeId: number): number {
+  let hash = employeeId * 97;
+
+  for (const char of date) {
+    hash = (hash * 31 + char.charCodeAt(0)) % 9973;
+  }
+
+  return hash;
+}
+
+function getDailyAssignments(
+  date: string,
+  insertedEmployees: typeof employees.$inferSelect[],
+): Array<{ employee: typeof employees.$inferSelect; shiftType: ShiftType }> {
+  const shuffledEmployees = [...insertedEmployees].sort((a, b) => {
+    const scoreDiff = seededScore(date, a.id) - seededScore(date, b.id);
+    return scoreDiff || a.name.localeCompare(b.name, "ko");
+  });
+
+  const assignments: Array<{ employee: typeof employees.$inferSelect; shiftType: ShiftType }> = [];
+  let cursor = 0;
+
+  for (const [shiftType, count] of Object.entries(DAILY_STAFFING) as Array<[ShiftType, number]>) {
+    const employeesForShift = shuffledEmployees.slice(cursor, cursor + count);
+
+    for (const employee of employeesForShift) {
+      assignments.push({ employee, shiftType });
+    }
+
+    cursor += count;
+  }
+
+  return assignments;
+}
+
+function generatePastSchedulesAndLogs(insertedEmployees: typeof employees.$inferSelect[]) {
+  const logs: SeedShiftLog[] = [];
+
+  const scheduleRows = SEED_WEEK_STARTS.map(({ weekLabel, startDate }) => ({
+    weekLabel,
+    startDate,
+    status: "confirmed" as const,
+    confirmedAt: new Date("2026-05-23T09:00:00.000Z").toISOString(),
+  }));
+
+  for (
+    let date = new Date(SEED_LOG_START_DATE);
+    formatDate(date) <= SEED_LOG_END_DATE;
+    date.setDate(date.getDate() + 1)
+  ) {
+    const dateString = formatDate(date);
+    const weekLabel = getWeekLabel(dateString);
+    const dayType = getDayType(dateString);
+
+    for (const { employee, shiftType } of getDailyAssignments(dateString, insertedEmployees)) {
+      logs.push({
+        employeeId: employee.id,
+        date: dateString,
+        shiftType,
+        dayType,
+        weekLabel,
+        isConfirmed: true,
+      });
     }
   }
 
-  return logs;
+  return { scheduleRows, logs };
 }
 
 export async function seed() {
@@ -103,8 +156,10 @@ export async function seed() {
   const inserted = await db.insert(employees).values(MOCK_EMPLOYEES).returning();
   console.log(`Inserted ${inserted.length} employees`);
 
-  const empIds = inserted.map((e) => e.id);
-  const logs = generatePastLogs(empIds);
+  const { scheduleRows, logs } = generatePastSchedulesAndLogs(inserted);
+  await db.insert(schedules).values(scheduleRows);
+  console.log(`Inserted ${scheduleRows.length} schedules`);
+
   await db.insert(shiftLogs).values(logs);
   console.log(`Inserted ${logs.length} shift logs`);
 

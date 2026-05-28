@@ -16,6 +16,10 @@ const PREF_OPTION_LABELS: Record<string, string> = { like: "👍 선호", neutra
 
 type PrefForm = { openPreference: string; middlePreference: string; closePreference: string };
 
+function sortEmployeesByName(rows: Employee[]): Employee[] {
+  return [...rows].sort((a, b) => a.name.localeCompare(b.name, "ko"));
+}
+
 export default function EmployeesPage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
@@ -25,7 +29,7 @@ export default function EmployeesPage() {
 
   async function load() {
     const data = await fetch("/api/employees").then((r) => r.json());
-    setEmployees(data);
+    setEmployees(sortEmployeesByName(data));
     setLoading(false);
   }
 
@@ -36,7 +40,7 @@ export default function EmployeesPage() {
       .then((r) => r.json())
       .then((data) => {
         if (ignore) return;
-        setEmployees(data);
+        setEmployees(sortEmployeesByName(data));
         setLoading(false);
       });
 

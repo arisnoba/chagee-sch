@@ -46,12 +46,17 @@ export async function PUT(req: Request, { params }: { params: Promise<{ week: st
   const { days } = await req.json();
   const schedule = await db.select().from(schedules).where(eq(schedules.weekLabel, week));
 
-  if (!schedule.length) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (schedule[0].status === "confirmed") {
-    return NextResponse.json({ error: "Confirmed schedule cannot be edited" }, { status: 409 });
-  }
   if (!Array.isArray(days) || !days.every(isValidDaySchedule)) {
     return NextResponse.json({ error: "Invalid schedule days" }, { status: 400 });
+  }
+
+  if (schedule[0]?.status === "confirmed") {
+    return NextResponse.json({ error: "Confirmed schedule cannot be edited" }, { status: 409 });
+  }
+
+  if (!schedule.length) {
+    const startDate = [...days].map((day: DaySchedule) => day.date).sort()[0];
+    await db.insert(schedules).values({ weekLabel: week, startDate, status: "draft" });
   }
 
   const logsToInsert = days.flatMap((day: DaySchedule) => {
