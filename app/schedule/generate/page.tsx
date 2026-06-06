@@ -16,6 +16,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { ScheduleCalendar, type CalendarDay } from "@/components/schedule-calendar";
+import { formatLocalDate } from "@/lib/calendar/date";
 import type { DaySchedule } from "@/lib/scheduler/generate";
 import type { ShiftType } from "@/lib/scheduler/fairness";
 import type { WorkShiftPart } from "@/lib/shift-parts";
@@ -46,7 +47,7 @@ function getSunday(date: Date): Date {
 }
 
 function formatDate(d: Date): string {
-  return d.toISOString().slice(0, 10);
+  return formatLocalDate(d);
 }
 
 function getWeekLabel(sunday: Date): string {
@@ -261,6 +262,9 @@ export default function GeneratePage() {
       setShiftParts(data.shiftParts ?? DEFAULT_SHIFT_PARTS);
       setPreview(data.days);
       setSelectedEditDate(data.days[0]?.date ?? "");
+      if (data.holidaysLoaded === false) {
+        setGenerateError("공휴일 정보를 불러오지 못해 공휴일 가중치 없이 생성했습니다.");
+      }
       if (data.warning === "SCHEDULE_CONFIRMED") {
         setSaveError("이미 확정된 같은 주차 근무표가 있습니다. 확정 시 교체 여부를 확인합니다.");
       }

@@ -1,31 +1,17 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db/client";
 import { employees, schedules, shiftLogs } from "@/lib/db/schema";
-import { getKoreaHolidaysForDates, holidayNameMap } from "@/lib/calendar/koreaHolidays";
+import { getKoreaHolidaysForDatesWithStatus, holidayNameMap } from "@/lib/calendar/koreaHolidays";
+import { addLocalDays, formatLocalDate, isValidDateString, parseLocalDate } from "@/lib/calendar/date";
 import { generateWeekSchedule, type HolidayInput } from "@/lib/scheduler/generate";
 import { getActiveShiftParts } from "@/lib/db/shiftParts";
 import { and, eq, lt } from "drizzle-orm";
 
 function buildWeekDates(startDate: string): string[] {
-  const weekStart = new Date(startDate);
+  const weekStart = parseLocalDate(startDate);
   return Array.from({ length: 7 }, (_, index) => {
-    const date = new Date(weekStart);
-    date.setDate(date.getDate() + index);
-    return date.toISOString().slice(0, 10);
+    return formatLocalDate(addLocalDays(weekStart, index));
   });
-}
-
-function isValidDateString(value: unknown): value is string {
-  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-
-  const [year, month, day] = value.split("-").map(Number);
-  const date = new Date(Date.UTC(year, month - 1, day));
-
-  return (
-    date.getUTCFullYear() === year &&
-    date.getUTCMonth() === month - 1 &&
-    date.getUTCDate() === day
-  );
 }
 
 function isValidWeekLabel(value: unknown): value is string {
@@ -51,14 +37,21 @@ export async function POST(req: Request) {
     .where(and(eq(shiftLogs.isConfirmed, true), lt(shiftLogs.date, startDate)));
 
   const weekDates = buildWeekDates(startDate);
-  const koreaHolidays = await getKoreaHolidaysForDates(weekDates);
+  const { holidays: koreaHolidays, loaded: holidaysLoaded } = await getKoreaHolidaysForDatesWithStatus(weekDates);
   const holidayInputs: HolidayInput[] = Array.isArray(holidays) && holidays.length > 0
     ? holidays
     : koreaHolidays;
   const shiftParts = await getActiveShiftParts();
-  const weekStart = new Date(startDate);
+  const weekStart = parseLocalDate(startDate);
   const daySchedules = generateWeekSchedule(weekStart, allEmployees, pastLogs, holidayInputs, shiftParts);
   const warning = existingSchedule[0]?.status === "confirmed" ? "SCHEDULE_CONFIRMED" : undefined;
 
-  return NextResponse.json({ weekLabel, days: daySchedules, holidays: holidayNameMap(koreaHolidays), shiftParts, warning });
+  return NextResponse.json({
+    weekLabel,
+    days: daySchedules,
+    holidays: holidayNameMap(koreaHolidays),
+    holidaysLoaded,
+    shiftParts,
+    warning,
+  });
 }

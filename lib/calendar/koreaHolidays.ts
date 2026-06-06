@@ -12,7 +12,7 @@ function getYear(date: string): number {
   return Number(date.slice(0, 4));
 }
 
-export async function getKoreaHolidays(year: number): Promise<KoreaHoliday[]> {
+async function fetchKoreaHolidays(year: number): Promise<KoreaHoliday[]> {
   const cached = holidayCache.get(year);
   if (cached) return cached;
 
@@ -27,14 +27,25 @@ export async function getKoreaHolidays(year: number): Promise<KoreaHoliday[]> {
         const localName = names.join(", ");
         return { date, localName, name: localName };
       });
-    })
-    .catch((error) => {
-      console.error(error);
-      return [];
     });
 
   holidayCache.set(year, request);
-  return request;
+
+  try {
+    return await request;
+  } catch (error) {
+    holidayCache.delete(year);
+    throw error;
+  }
+}
+
+export async function getKoreaHolidays(year: number): Promise<KoreaHoliday[]> {
+  try {
+    return await fetchKoreaHolidays(year);
+  } catch (error) {
+    console.error(error);
+    return [];
+  }
 }
 
 export async function getKoreaHolidaysForDates(dates: string[]): Promise<KoreaHoliday[]> {
@@ -43,6 +54,28 @@ export async function getKoreaHolidaysForDates(dates: string[]): Promise<KoreaHo
   const holidays = (await Promise.all(years.map(getKoreaHolidays))).flat();
 
   return holidays.filter((holiday) => requestedDates.has(holiday.date));
+}
+
+export async function getKoreaHolidaysForDatesWithStatus(
+  dates: string[]
+): Promise<{ holidays: KoreaHoliday[]; loaded: boolean }> {
+  const requestedDates = new Set(dates);
+  const years = [...new Set(dates.map(getYear))];
+  const results = await Promise.all(
+    years.map(async (year) => {
+      try {
+        return { holidays: await fetchKoreaHolidays(year), loaded: true };
+      } catch (error) {
+        console.error(error);
+        return { holidays: [], loaded: false };
+      }
+    })
+  );
+
+  return {
+    holidays: results.flatMap((result) => result.holidays).filter((holiday) => requestedDates.has(holiday.date)),
+    loaded: results.every((result) => result.loaded),
+  };
 }
 
 export function holidayNameMap(holidays: KoreaHoliday[]): Record<string, string> {

@@ -1,6 +1,7 @@
 import type { Employee, ShiftLog } from "@/lib/db/schema";
 import { rankByFairness, type EmployeeWithScore, type ShiftType, type DayType } from "./fairness";
 import { DEFAULT_SHIFT_PARTS, sortShiftParts, type WorkShiftPart } from "@/lib/shift-parts";
+import { addLocalDays, daysBetween, formatLocalDate, parseLocalDate } from "@/lib/calendar/date";
 
 export type DaySchedule = {
   date: string;
@@ -39,9 +40,8 @@ function buildWeekDays(weekStart: Date, holidays: HolidayInput[]): WeekDay[] {
   const holidayMap = normalizeHolidayMap(holidays);
   const days: WeekDay[] = [];
   for (let i = 0; i < 7; i++) {
-    const d = new Date(weekStart);
-    d.setDate(d.getDate() + i);
-    const date = d.toISOString().slice(0, 10);
+    const d = addLocalDays(weekStart, i);
+    const date = formatLocalDate(d);
     const dow = d.getDay();
     const holidayName = holidayMap[date];
     const dayType: DayType = holidayName
@@ -68,7 +68,6 @@ function getShiftPreferenceScore(emp: Employee, shiftCode: string): number {
 function getShiftPreferenceOrder(emp: Employee, shiftParts: WorkShiftPart[]): string[] {
   return shiftParts
     .map((part) => ({ s: part.code, score: getShiftPreferenceScore(emp, part.code), sortOrder: part.sortOrder }))
-    .sort((a, b) => b.score - a.score)
     .sort((a, b) => (b.score - a.score) || (a.sortOrder - b.sortOrder))
     .map((x) => x.s);
 }
@@ -196,7 +195,7 @@ function assignOffDays(
         .filter((d) => offCount[d.date] < MAX_OFF_PER_DAY && !picked.includes(d.date))
         .sort((a, b) => {
           const isAdjacent = (date: string) =>
-            picked.some((pickedDate) => Math.abs(new Date(date).getTime() - new Date(pickedDate).getTime()) === 86400000);
+            picked.some((pickedDate) => Math.abs(daysBetween(date, pickedDate)) === 1);
           const dayRank = (d: WeekDay) => (d.dayType === "holiday" ? 2 : d.dayType === "weekend" ? 1 : 0);
           const adjacentDiff = Number(isAdjacent(a.date)) - Number(isAdjacent(b.date));
           if (adjacentDiff !== 0) return adjacentDiff;
@@ -220,7 +219,7 @@ function getOffReasons(emp: EmployeeWithScore, day: WeekDay, pickedDates: string
   if (day.dayType === "weekend") reasons.push("주말 휴무 우선");
 
   const hasAdjacentOff = pickedDates.some(
-    (pickedDate) => Math.abs(new Date(day.date).getTime() - new Date(pickedDate).getTime()) === 86400000
+    (pickedDate) => Math.abs(daysBetween(day.date, pickedDate)) === 1
   );
   if (!hasAdjacentOff) reasons.push("연속 휴무 회피");
 
@@ -273,9 +272,7 @@ export function generateWeekSchedule(
     );
 
     const ranked = rankByFairness(workingEmps, workingLogs);
-    const previousDate = new Date(day.date);
-    previousDate.setDate(previousDate.getDate() - 1);
-    const previousDateString = previousDate.toISOString().slice(0, 10);
+    const previousDateString = formatLocalDate(addLocalDays(parseLocalDate(day.date), -1));
     const lastShiftCode = shiftParts[shiftParts.length - 1]?.code;
     const previousLastShiftIds = new Set(
       workingLogs
