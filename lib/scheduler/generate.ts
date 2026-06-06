@@ -122,6 +122,11 @@ function getShiftCapacities(workerCount: number, shiftParts: WorkShiftPart[]): R
   return cap;
 }
 
+function getMaxOffPerDay(employeeCount: number, dayCount: number): number {
+  if (employeeCount === 0 || dayCount === 0) return MAX_OFF_PER_DAY;
+  return Math.max(MAX_OFF_PER_DAY, Math.ceil((employeeCount * OFF_DAYS_PER_EMPLOYEE) / dayCount));
+}
+
 // 공정성 순으로 정렬된 직원들을 설정된 근무 파트에 배분 (휴무 제외 전원 투입)
 function assignShifts(
   rankedWorkers: EmployeeWithScore[],
@@ -204,6 +209,7 @@ function assignOffDays(
   logs: ShiftLog[],
   seed: string
 ): Record<number, string[]> {
+  const maxOffPerDay = getMaxOffPerDay(employees.length, weekDays.length);
   const offCount: Record<string, number> = {};
   weekDays.forEach((d) => {
     offCount[d.date] = 0;
@@ -222,7 +228,7 @@ function assignOffDays(
       if (picked.length > round) continue;
 
       const day = weekDays
-        .filter((d) => offCount[d.date] < MAX_OFF_PER_DAY && !picked.includes(d.date))
+        .filter((d) => offCount[d.date] < maxOffPerDay && !picked.includes(d.date))
         .sort((a, b) => {
           const isAdjacent = (date: string) =>
             picked.some((pickedDate) => Math.abs(daysBetween(date, pickedDate)) === 1);
