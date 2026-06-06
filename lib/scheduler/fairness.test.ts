@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Employee, ShiftLog } from "@/lib/db/schema";
 import { DEFAULT_SHIFT_PARTS, type WorkShiftPart } from "@/lib/shift-parts";
-import { calcBurden, calcFairnessScore, partBurden, rankByFairness } from "./fairness";
+import { calcBurden, calcFairnessScore, partBurden, rankByFairness, sortFairnessForDisplay } from "./fairness";
 import { getFairnessHistoryStartDate } from "./history";
 
 function employee(id: number, name = `직원${id}`): Employee {
@@ -102,5 +102,18 @@ describe("calcFairnessScore", () => {
 describe("getFairnessHistoryStartDate", () => {
   it("기준일에서 기본 8주 전 날짜를 계산한다", () => {
     expect(getFairnessHistoryStartDate("2026-06-07")).toBe("2026-04-12");
+  });
+});
+
+describe("sortFairnessForDisplay", () => {
+  it("점수가 같으면 이름과 id 순으로 표시 순서를 고정한다", () => {
+    const rows = [
+      { ...employee(3, "최유나"), fairnessScore: 1 },
+      { ...employee(2, "김민준"), fairnessScore: 1 },
+      { ...employee(1, "김민준"), fairnessScore: 1 },
+      { ...employee(4, "박지호"), fairnessScore: 2 },
+    ];
+
+    expect(sortFairnessForDisplay(rows).map((row) => row.id)).toEqual([4, 1, 2, 3]);
   });
 });

@@ -95,10 +95,23 @@ export function calcFairnessScore(
 }
 
 export type EmployeeWithScore = Employee & { fairnessScore: number };
+type FairnessDisplayRow = { id: number; name: string; fairnessScore: number };
 type RankOptions = {
   shiftParts?: WorkShiftPart[];
   tieSeed?: string;
 };
+
+export function compareFairnessDisplay(a: FairnessDisplayRow, b: FairnessDisplayRow): number {
+  const scoreDiff = b.fairnessScore - a.fairnessScore;
+  if (scoreDiff !== 0) return scoreDiff;
+
+  const nameDiff = a.name.localeCompare(b.name, "ko");
+  return nameDiff || a.id - b.id;
+}
+
+export function sortFairnessForDisplay<T extends FairnessDisplayRow>(rows: T[]): T[] {
+  return [...rows].sort(compareFairnessDisplay);
+}
 
 function hashSeed(value: string): number {
   let hash = 2166136261;
@@ -139,7 +152,7 @@ export function rankByFairness(
   const tieSeed = rankOptions?.tieSeed;
   const ranked = employees
     .map((e) => ({ ...e, fairnessScore: calcFairnessScore(e, logs, shiftParts) }))
-    .sort((a, b) => b.fairnessScore - a.fairnessScore);
+    .sort(compareFairnessDisplay);
 
   if (!tieSeed) return ranked;
 

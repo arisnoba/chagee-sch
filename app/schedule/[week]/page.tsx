@@ -18,7 +18,7 @@ import {
 import { ScheduleCalendar, type CalendarDay } from "@/components/schedule-calendar";
 import { parseLocalDate } from "@/lib/calendar/date";
 import type { Schedule, ShiftLog, Employee } from "@/lib/db/schema";
-import { calcFairnessScore, type ShiftType } from "@/lib/scheduler/fairness";
+import { calcFairnessScore, compareFairnessDisplay, type ShiftType } from "@/lib/scheduler/fairness";
 import type { DaySchedule } from "@/lib/scheduler/generate";
 import type { WorkShiftPart } from "@/lib/shift-parts";
 
@@ -296,7 +296,10 @@ export default function WeekPage() {
         employee,
         score: calcFairnessScore(employee, logs, shiftParts),
       }))
-      .sort((a, b) => b.score - a.score);
+      .sort((a, b) => compareFairnessDisplay(
+        { id: a.employee.id, name: a.employee.name, fairnessScore: a.score },
+        { id: b.employee.id, name: b.employee.name, fairnessScore: b.score }
+      ));
   }, [data, draftDays, shiftParts, summaryRows, week]);
 
   useEffect(() => {
