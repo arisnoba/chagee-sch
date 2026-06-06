@@ -103,6 +103,11 @@ function getShiftReasons(
 }
 
 function getShiftCapacities(workerCount: number, shiftParts: WorkShiftPart[]): Record<string, number> {
+  if (workerCount <= 0) return Object.fromEntries(shiftParts.map((part) => [part.code, 0]));
+  if (workerCount <= shiftParts.length) {
+    return Object.fromEntries(shiftParts.map((part, index) => [part.code, index < workerCount ? 1 : 0]));
+  }
+
   const base = Math.floor(workerCount / shiftParts.length);
   let extra = workerCount % shiftParts.length;
   const cap = Object.fromEntries(shiftParts.map((part) => [part.code, base]));
