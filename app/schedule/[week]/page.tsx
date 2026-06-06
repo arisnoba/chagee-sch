@@ -425,6 +425,7 @@ export default function WeekPage() {
   }
 
   function handleStartEdit() {
+    if (!data) return;
     const nextDraftDays = buildEditableDaysFromData(data);
     setDraftDays(nextDraftDays);
     setSelectedEditDate(nextDraftDays[0]?.date ?? "");
@@ -433,6 +434,7 @@ export default function WeekPage() {
   }
 
   function handleCancelEdit() {
+    if (!data) return;
     const nextDraftDays = buildEditableDaysFromData(data);
     setDraftDays(nextDraftDays);
     setSelectedEditDate(nextDraftDays[0]?.date ?? "");
