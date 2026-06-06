@@ -1,4 +1,5 @@
 import { Badge } from "@/components/ui/badge";
+import { parseLocalDate } from "@/lib/calendar/date";
 import type { DayType } from "@/lib/scheduler/fairness";
 
 export type CalendarDay = {
@@ -26,6 +27,46 @@ function dayClass(dayType: DayType): string {
   return "border-gray-200 bg-white";
 }
 
+function renderDayContent(day: CalendarDay) {
+  return (
+    <>
+      <div className="mb-3 flex items-start justify-between gap-2">
+        <div>
+          <p className="text-sm font-semibold text-gray-900">
+            {day.date.slice(5)} <span className="text-xs font-normal text-gray-500">{day.dayLabel}</span>
+          </p>
+          {day.holidayName && (
+            <p className="mt-0.5 text-xs font-medium text-red-600">{day.holidayName}</p>
+          )}
+        </div>
+        {day.dayType === "holiday" && <Badge variant="destructive">공휴일</Badge>}
+        {day.dayType === "weekend" && <Badge variant="outline">주말</Badge>}
+      </div>
+
+      <div className="space-y-2">
+        {day.shifts.map((shift, index) => (
+          <div key={shift.shiftType} className="rounded-md border border-gray-100 bg-white/80 p-2">
+            <span className={`inline-flex rounded px-2 py-0.5 text-xs font-medium ${SHIFT_COLORS[index % SHIFT_COLORS.length]}`}>
+              {shift.label}
+            </span>
+            {shift.startTime && shift.endTime ? (
+              <p className="mt-1 text-[11px] text-gray-400">{shift.startTime}-{shift.endTime}</p>
+            ) : null}
+            <p className="mt-1 text-xs leading-5 text-gray-700">{shift.names.join(", ")}</p>
+          </div>
+        ))}
+
+        {day.offNames.length > 0 && (
+          <div className="rounded-md border border-gray-100 bg-white/70 p-2">
+            <p className="text-xs font-medium text-gray-400">휴무 ({day.offNames.length}명)</p>
+            <p className="mt-1 text-xs leading-5 text-gray-500">{day.offNames.join(", ")}</p>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
 export function ScheduleCalendar({
   days,
   selectedDate,
@@ -35,10 +76,29 @@ export function ScheduleCalendar({
   selectedDate?: string;
   onDaySelect?: (date: string) => void;
 }) {
-  const sortedDays = [...days].sort((a, b) => new Date(a.date).getDay() - new Date(b.date).getDay());
+  const sortedDays = [...days].sort((a, b) => parseLocalDate(a.date).getDay() - parseLocalDate(b.date).getDay());
 
   return (
-    <div className="overflow-x-auto">
+    <>
+      <div className="space-y-3 md:hidden">
+        {sortedDays.map((day) => {
+          const className = `w-full rounded-lg border p-3 text-left ${dayClass(day.dayType)} ${
+            selectedDate === day.date ? "ring-2 ring-blue-500 ring-inset" : ""
+          } ${onDaySelect ? "cursor-pointer hover:bg-blue-50/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500" : ""}`;
+
+          return onDaySelect ? (
+            <button key={day.date} type="button" onClick={() => onDaySelect(day.date)} className={className}>
+              {renderDayContent(day)}
+            </button>
+          ) : (
+            <div key={day.date} className={className}>
+              {renderDayContent(day)}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="hidden overflow-x-auto md:block">
       <div className="min-w-[980px] overflow-hidden rounded-lg border border-gray-200 bg-white">
         <div className="grid grid-cols-7 bg-gray-50">
           {WEEKDAY_HEADERS.map((day) => (
@@ -52,57 +112,21 @@ export function ScheduleCalendar({
           {sortedDays.map((day) => {
             const className = `min-h-[300px] border-r border-t p-3 text-left last:border-r-0 ${dayClass(day.dayType)} ${
               selectedDate === day.date ? "ring-2 ring-blue-500 ring-inset" : ""
-            } ${onDaySelect ? "cursor-pointer hover:bg-blue-50/40" : ""}`;
-            const content = (
-              <>
-              <div className="mb-3 flex items-start justify-between gap-2">
-                <div>
-                  <p className="text-sm font-semibold text-gray-900">
-                    {day.date.slice(5)} <span className="text-xs font-normal text-gray-500">{day.dayLabel}</span>
-                  </p>
-                  {day.holidayName && (
-                    <p className="mt-0.5 text-xs font-medium text-red-600">{day.holidayName}</p>
-                  )}
-                </div>
-                {day.dayType === "holiday" && <Badge variant="destructive">공휴일</Badge>}
-                {day.dayType === "weekend" && <Badge variant="outline">주말</Badge>}
-              </div>
-
-              <div className="space-y-2">
-                {day.shifts.map((shift) => (
-                  <div key={shift.shiftType} className="rounded-md border border-gray-100 bg-white/80 p-2">
-                    <span className={`inline-flex rounded px-2 py-0.5 text-xs font-medium ${SHIFT_COLORS[day.shifts.indexOf(shift) % SHIFT_COLORS.length]}`}>
-                      {shift.label}
-                    </span>
-                    {shift.startTime && shift.endTime ? (
-                      <p className="mt-1 text-[11px] text-gray-400">{shift.startTime}-{shift.endTime}</p>
-                    ) : null}
-                    <p className="mt-1 text-xs leading-5 text-gray-700">{shift.names.join(", ")}</p>
-                  </div>
-                ))}
-
-                {day.offNames.length > 0 && (
-                  <div className="rounded-md border border-gray-100 bg-white/70 p-2">
-                    <p className="text-xs font-medium text-gray-400">휴무 ({day.offNames.length}명)</p>
-                    <p className="mt-1 text-xs leading-5 text-gray-500">{day.offNames.join(", ")}</p>
-                  </div>
-                )}
-              </div>
-              </>
-            );
+            } ${onDaySelect ? "cursor-pointer hover:bg-blue-50/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500" : ""}`;
 
             return onDaySelect ? (
               <button key={day.date} type="button" onClick={() => onDaySelect(day.date)} className={className}>
-                {content}
+                {renderDayContent(day)}
               </button>
             ) : (
               <div key={day.date} className={className}>
-                {content}
+                {renderDayContent(day)}
               </div>
             );
           })}
         </div>
       </div>
-    </div>
+      </div>
+    </>
   );
 }

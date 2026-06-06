@@ -433,8 +433,9 @@ export default function GeneratePage() {
                   <button
                     key={shiftType}
                     type="button"
+                    aria-pressed={selectedShift === shiftType}
                     onClick={() => setSelectedShift(shiftType)}
-                    className={`rounded-md border px-3 py-1.5 text-sm font-medium ${
+                    className={`rounded-md border px-3 py-1.5 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
                       selectedShift === shiftType
                         ? getShiftStyle(shiftParts, shiftType)
                         : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"

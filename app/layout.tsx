@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Geist } from "next/font/google";
-import Link from "next/link";
+import { AppNav } from "@/components/app-nav";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -17,24 +17,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="ko" className={`${geistSans.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col bg-gray-50">
-        <nav className="bg-white border-b border-gray-200 px-6 py-3 flex items-center gap-6">
-          <Link href="/" className="font-bold text-lg text-gray-900 hover:text-gray-600">
-            🍵 차지 근무표
-          </Link>
-          <Link href="/employees" className="text-sm text-gray-600 hover:text-gray-900">
-            직원 관리
-          </Link>
-          <Link href="/shift-parts" className="text-sm text-gray-600 hover:text-gray-900">
-            파트 관리
-          </Link>
-          <Link href="/schedule/generate" className="text-sm text-gray-600 hover:text-gray-900">
-            근무표 생성
-          </Link>
-          <Link href="/schedule/month" className="text-sm text-gray-600 hover:text-gray-900">
-            월간 근무표
-          </Link>
-        </nav>
-        <main className="mx-auto w-full px-6 py-8">{children}</main>
+        <AppNav />
+        <main className="mx-auto w-full px-4 py-6 sm:px-6 sm:py-8">{children}</main>
       </body>
     </html>
   );
