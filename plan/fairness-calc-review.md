@@ -1,6 +1,6 @@
 # 공평 지표(Fairness) 계산식 검토 및 견고화
 
-> 검토 문서. `lib/scheduler/fairness.ts`의 정확성·견고성 점검 결과.
+> 검토 문서 — 실행은 추후. `lib/scheduler/fairness.ts`의 정확성·견고성 점검과 개선안.
 > 관련: 기존 스케줄러 종합 감사 `plan/schedule-audit.md`.
 
 ## 배경
@@ -86,3 +86,45 @@ burden = BASE + EARLY_W·earliness + LATE_W·lateness   # 초기값 BASE=1.0, EA
 
 > 선택: 자동값을 기본으로 두고 특정 파트만 점장이 오버라이드하는 하이브리드도 가능하나,
 > "까다로움 제거"가 목적이면 **순수 자동(오버라이드 없음)** 을 권장한다.
+
+---
+
+## 단계별 개선안 (실행 시 참고)
+
+### Phase 0 — 테스트 하네스
+테스트 프레임워크 없음 → **vitest** 도입. `lib/scheduler/fairness.test.ts`로 현행 동작 고정 후 변경.
+
+### Phase 1 — 파트 인식 부담 (Critical, 스키마 변경 없음)
+- `fairness.ts`에 `partBurden(part)` 신설(위 시간 기반 모델).
+- `calcBurden`/`calcFairnessScore`/`rankByFairness`에 `shiftParts: WorkShiftPart[]` 인자 추가. 로그 코드로 파트 조회, 없으면 중립 fallback(부담 `BASE`).
+- 호출처 전파: `app/api/fairness/route.ts`(`getActiveShiftParts()` 로드), `app/schedule/[week]/page.tsx:297`, `generate.ts` 내부 호출.
+
+### Phase 2 — 파트별 성향 (Critical, 스키마 + UI)
+- `employees`에 JSON 컬럼 `part_preferences`(`{ "<code>": "like|neutral|dislike" }`) 추가, 마이그레이션에서 기존 3컬럼 백필.
+- 공통 접근자 `getPartPreference(emp, code)` 신설 → `fairness.ts`·`generate.ts`가 이것만 사용(성향 이중 정의 해소).
+- 직원 폼(`app/employees/page.tsx`)에 활성 파트별 성향 셀렉터, API 저장/검증.
+
+### Phase 3 — 근무 요일 부담 + 최근성 (High)
+- 근무 burden에 `WORK_DAY_FACTOR`(`weekday=1`, `weekend=1.5`, `holiday=2`) 곱 — 휴무 `DAY_REWARD`와 대칭.
+- `calcFairnessScore`에 `windowWeeks`(예 8주) 옵션 추가 → 최근 N주 기준으로 정규화.
+
+### Phase 4 — 동점 처리 (Medium)
+- 정렬 2차/3차 키: 점수 desc → 누적 reward asc(가장 적게 쉰 사람 우선) → 주차 시드 회전/id. 낮은 id 고정 편향 제거.
+
+---
+
+## 수정 대상 파일 (실행 시)
+- `lib/scheduler/fairness.ts` — 계산식 핵심
+- `lib/scheduler/generate.ts` — `shiftParts`/성향 접근자 전파
+- `app/api/fairness/route.ts` — 파트 로드 + 윈도우
+- `app/schedule/[week]/page.tsx` — 클라이언트 호출 인자
+- `lib/db/schema.ts` + `lib/db/migrate.ts` — `part_preferences` + 백필
+- `app/employees/page.tsx`, `app/api/employees/route.ts`, `app/api/employees/[id]/route.ts` — 파트별 성향
+- `lib/scheduler/fairness.test.ts`(신규), `package.json`
+
+## 검증 (실행 시)
+1. 단위 테스트(`npm test`): `partBurden` 기본 파트 `close>open>middle>0`·미들 nonzero, 커스텀 파트 차등, 성향/요일/최근성/동점 키.
+2. 커스텀 파트 회귀: 파트 4~5개(`part-N`) 설정 → `/api/fairness`가 평탄화되지 않는지.
+3. `npm run build`, `npm run lint`.
+4. 수동 E2E: 커스텀 파트 + 파트별 성향 입력 → `/schedule/generate` → 배정이 점수와 일관되는지.
+5. 상수 보정: `EARLY_W/LATE_W/WORK_DAY_FACTOR/windowWeeks`를 실제 점수 분포로 미세 조정.
