@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
+import { Copy, Printer } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -77,6 +78,7 @@ export default function WeekPage() {
   const [data, setData] = useState<WeekData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [shareMessage, setShareMessage] = useState("");
 
   useEffect(() => {
     let ignore = false;
@@ -116,6 +118,21 @@ export default function WeekPage() {
   if (loading) return <div className="text-center py-20 text-gray-400">불러오는 중...</div>;
   if (error) return <div className="text-center py-20 text-red-400">{error}</div>;
   if (!data) return <div className="text-center py-20 text-red-400">스케줄을 찾을 수 없습니다.</div>;
+
+  async function handleCopyLink() {
+    setShareMessage("");
+
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setShareMessage("링크를 복사했습니다.");
+    } catch {
+      setShareMessage("링크를 복사하지 못했습니다.");
+    }
+  }
+
+  function handlePrint() {
+    window.print();
+  }
 
   const { schedule, logs, employees } = data;
   const shiftParts = data.shiftParts ?? [
@@ -160,15 +177,26 @@ export default function WeekPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">{week} 근무표</h1>
           <p className="text-sm text-gray-500 mt-1">시작일: {schedule.startDate}</p>
+          {shareMessage ? (
+            <p className="no-print mt-1 text-xs text-gray-500">{shareMessage}</p>
+          ) : null}
         </div>
-        <div className="flex items-center gap-3">
+        <div className="no-print flex flex-wrap items-center gap-3">
           <Badge variant={schedule.status === "confirmed" ? "default" : "secondary"}>
             {schedule.status === "confirmed" ? "✅ 확정됨" : "초안"}
           </Badge>
+          <Button variant="outline" onClick={handleCopyLink}>
+            <Copy className="size-4" aria-hidden="true" />
+            링크 복사
+          </Button>
+          <Button variant="outline" onClick={handlePrint}>
+            <Printer className="size-4" aria-hidden="true" />
+            인쇄
+          </Button>
           <Link href="/schedule/generate">
             <Button variant="outline">새 스케줄 생성</Button>
           </Link>
