@@ -3,6 +3,7 @@ import { db } from "@/lib/db/client";
 import { employees, shiftLogs } from "@/lib/db/schema";
 import { getKoreaHolidaysForDates, holidayNameMap } from "@/lib/calendar/koreaHolidays";
 import { generateWeekSchedule, type HolidayInput } from "@/lib/scheduler/generate";
+import { getActiveShiftParts } from "@/lib/db/shiftParts";
 import { and, eq, lt } from "drizzle-orm";
 
 function buildWeekDates(startDate: string): string[] {
@@ -28,8 +29,9 @@ export async function POST(req: Request) {
   const holidayInputs: HolidayInput[] = Array.isArray(holidays) && holidays.length > 0
     ? holidays
     : koreaHolidays;
+  const shiftParts = await getActiveShiftParts();
   const weekStart = new Date(startDate);
-  const daySchedules = generateWeekSchedule(weekStart, allEmployees, pastLogs, holidayInputs);
+  const daySchedules = generateWeekSchedule(weekStart, allEmployees, pastLogs, holidayInputs, shiftParts);
 
-  return NextResponse.json({ weekLabel, days: daySchedules, holidays: holidayNameMap(koreaHolidays) });
+  return NextResponse.json({ weekLabel, days: daySchedules, holidays: holidayNameMap(koreaHolidays), shiftParts });
 }

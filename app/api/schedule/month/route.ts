@@ -3,6 +3,7 @@ import { and, gte, inArray, lte } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { employees, schedules, shiftLogs } from "@/lib/db/schema";
 import { getKoreaHolidaysForDates, holidayNameMap } from "@/lib/calendar/koreaHolidays";
+import { getActiveShiftParts } from "@/lib/db/shiftParts";
 
 function isValidMonth(month: string | null): month is string {
   return !!month && /^\d{4}-\d{2}$/.test(month);
@@ -47,6 +48,7 @@ export async function GET(req: Request) {
     : [];
   const emps = await db.select().from(employees);
   const holidays = await getKoreaHolidaysForDates(dates);
+  const shiftParts = await getActiveShiftParts();
 
   return NextResponse.json({
     month,
@@ -55,5 +57,6 @@ export async function GET(req: Request) {
     schedules: savedSchedules,
     employees: emps,
     holidays: holidayNameMap(holidays),
+    shiftParts,
   });
 }

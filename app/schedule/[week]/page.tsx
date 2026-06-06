@@ -8,15 +8,23 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScheduleCalendar, type CalendarDay } from "@/components/schedule-calendar";
 import type { Schedule, ShiftLog, Employee } from "@/lib/db/schema";
+import type { WorkShiftPart } from "@/lib/shift-parts";
 
 const DAY_LABELS = ["일", "월", "화", "수", "목", "금", "토"];
 
-type WeekData = { schedule: Schedule; logs: ShiftLog[]; employees: Employee[]; holidays?: Record<string, string> };
+type WeekData = {
+  schedule: Schedule;
+  logs: ShiftLog[];
+  employees: Employee[];
+  holidays?: Record<string, string>;
+  shiftParts?: WorkShiftPart[];
+};
 
 function buildCalendarDays(
   dates: string[],
   byDate: Record<string, ShiftLog[]>,
   empMap: Record<number, string>,
+  shiftParts: WorkShiftPart[],
   holidays: Record<string, string> = {}
 ): CalendarDay[] {
   return dates.map((date) => {
@@ -26,8 +34,9 @@ function buildCalendarDays(
     const workLogs = dayLogs
       .filter((log) => log.shiftType !== "off")
       .sort((a, b) => {
-        const order = { open: 0, middle: 1, close: 2 };
-        return (order[a.shiftType as keyof typeof order] ?? 3) - (order[b.shiftType as keyof typeof order] ?? 3);
+        const left = shiftParts.findIndex((part) => part.code === a.shiftType);
+        const right = shiftParts.findIndex((part) => part.code === b.shiftType);
+        return (left === -1 ? 99 : left) - (right === -1 ? 99 : right);
       });
 
     return {
@@ -35,11 +44,14 @@ function buildCalendarDays(
       dayLabel: DAY_LABELS[dow],
       dayType,
       holidayName: holidays[date],
-      shifts: (["open", "middle", "close"] as const)
-        .map((shiftType) => ({
-          shiftType,
+      shifts: shiftParts
+        .map((part) => ({
+          shiftType: part.code,
+          label: part.label,
+          startTime: part.startTime,
+          endTime: part.endTime,
           names: workLogs
-            .filter((log) => log.shiftType === shiftType)
+            .filter((log) => log.shiftType === part.code)
             .map((log) => empMap[log.employeeId])
             .filter(Boolean),
         }))
@@ -75,6 +87,11 @@ export default function WeekPage() {
   if (!data) return <div className="text-center py-20 text-red-400">스케줄을 찾을 수 없습니다.</div>;
 
   const { schedule, logs, employees } = data;
+  const shiftParts = data.shiftParts ?? [
+    { code: "open", label: "오픈", startTime: "09:00", endTime: "18:00", sortOrder: 0 },
+    { code: "middle", label: "미들", startTime: "12:00", endTime: "21:00", sortOrder: 1 },
+    { code: "close", label: "마감", startTime: "15:00", endTime: "00:00", sortOrder: 2 },
+  ];
   const scheduleMonth = schedule.startDate.slice(0, 7);
   const empMap = Object.fromEntries(employees.map((e) => [e.id, e.name]));
 
@@ -85,7 +102,7 @@ export default function WeekPage() {
   }, {});
 
   const dates = Object.keys(byDate).sort();
-  const calendarDays = buildCalendarDays(dates, byDate, empMap, data.holidays);
+  const calendarDays = buildCalendarDays(dates, byDate, empMap, shiftParts, data.holidays);
 
   return (
     <div className="space-y-6">
@@ -118,14 +135,23 @@ export default function WeekPage() {
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
             {employees.map((emp) => {
               const empLogs = logs.filter((l) => l.employeeId === emp.id);
-              const counts = { open: 0, middle: 0, close: 0, off: 0 };
-              empLogs.forEach((l) => { counts[l.shiftType as keyof typeof counts]++; });
+              const counts = Object.fromEntries(shiftParts.map((part) => [part.code, 0]));
+              let offCount = 0;
+              empLogs.forEach((log) => {
+                if (log.shiftType === "off") {
+                  offCount++;
+                  return;
+                }
+                counts[log.shiftType] = (counts[log.shiftType] ?? 0) + 1;
+              });
               return (
                 <div key={emp.id} className="bg-white rounded border p-2 text-xs">
                   <p className="font-semibold text-gray-800 mb-1">{emp.name}</p>
                   <div className="space-y-0.5 text-gray-600">
-                    <p>오픈 {counts.open} · 미들 {counts.middle}</p>
-                    <p>마감 {counts.close} · 휴무 {counts.off}</p>
+                    {shiftParts.map((part) => (
+                      <p key={part.code}>{part.label} {counts[part.code] ?? 0}</p>
+                    ))}
+                    <p>휴무 {offCount}</p>
                   </div>
                 </div>
               );

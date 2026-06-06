@@ -34,6 +34,27 @@ export async function migrate() {
   `);
 
   await client.execute(`
+    CREATE TABLE IF NOT EXISTS shift_parts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      code TEXT NOT NULL UNIQUE,
+      label TEXT NOT NULL,
+      start_time TEXT NOT NULL,
+      end_time TEXT NOT NULL,
+      sort_order INTEGER NOT NULL,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+
+  await client.execute(`
+    INSERT OR IGNORE INTO shift_parts (code, label, start_time, end_time, sort_order, is_active)
+    VALUES
+      ('open', '오픈', '09:00', '18:00', 0, 1),
+      ('middle', '미들', '12:00', '21:00', 1, 1),
+      ('close', '마감', '15:00', '00:00', 2, 1)
+  `);
+
+  await client.execute(`
     CREATE TABLE IF NOT EXISTS schedules (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       week_label TEXT NOT NULL UNIQUE,

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { MonthScheduleCalendar, type MonthCalendarDay } from "@/components/month-schedule-calendar";
 import type { Employee, ShiftLog } from "@/lib/db/schema";
 import type { DayType } from "@/lib/scheduler/fairness";
+import type { WorkShiftPart } from "@/lib/shift-parts";
 
 const DAY_LABELS = ["일", "월", "화", "수", "목", "금", "토"];
 
@@ -16,6 +17,7 @@ type MonthData = {
   logs: ShiftLog[];
   employees: Employee[];
   holidays?: Record<string, string>;
+  shiftParts?: WorkShiftPart[];
 };
 
 function formatMonth(date: Date): string {
@@ -46,6 +48,11 @@ function buildEmptyMonthData(month: string): MonthData {
     logs: [],
     employees: [],
     holidays: {},
+    shiftParts: [
+      { code: "open", label: "오픈", startTime: "09:00", endTime: "18:00", sortOrder: 0 },
+      { code: "middle", label: "미들", startTime: "12:00", endTime: "21:00", sortOrder: 1 },
+      { code: "close", label: "마감", startTime: "15:00", endTime: "00:00", sortOrder: 2 },
+    ],
   };
 }
 
@@ -58,6 +65,11 @@ function getFallbackDayType(date: string, holidays: Record<string, string>): Day
 function buildMonthCalendarDays(data: MonthData): MonthCalendarDay[] {
   const empMap = Object.fromEntries(data.employees.map((employee) => [employee.id, employee.name]));
   const holidays = data.holidays ?? {};
+  const shiftParts = data.shiftParts ?? [
+    { code: "open", label: "오픈", startTime: "09:00", endTime: "18:00", sortOrder: 0 },
+    { code: "middle", label: "미들", startTime: "12:00", endTime: "21:00", sortOrder: 1 },
+    { code: "close", label: "마감", startTime: "15:00", endTime: "00:00", sortOrder: 2 },
+  ];
   const byDate = data.logs.reduce<Record<string, ShiftLog[]>>((acc, log) => {
     acc[log.date] = acc[log.date] ?? [];
     acc[log.date].push(log);
@@ -69,8 +81,9 @@ function buildMonthCalendarDays(data: MonthData): MonthCalendarDay[] {
     const workLogs = dayLogs
       .filter((log) => log.shiftType !== "off")
       .sort((a, b) => {
-        const order = { open: 0, middle: 1, close: 2 };
-        return (order[a.shiftType as keyof typeof order] ?? 3) - (order[b.shiftType as keyof typeof order] ?? 3);
+        const left = shiftParts.findIndex((part) => part.code === a.shiftType);
+        const right = shiftParts.findIndex((part) => part.code === b.shiftType);
+        return (left === -1 ? 99 : left) - (right === -1 ? 99 : right);
       });
     const dow = new Date(date).getDay();
 
@@ -80,11 +93,14 @@ function buildMonthCalendarDays(data: MonthData): MonthCalendarDay[] {
       dayType: dayLogs[0]?.dayType ?? getFallbackDayType(date, holidays),
       holidayName: holidays[date],
       hasSchedule: dayLogs.length > 0,
-      shifts: (["open", "middle", "close"] as const)
-        .map((shiftType) => ({
-          shiftType,
+      shifts: shiftParts
+        .map((part) => ({
+          shiftType: part.code,
+          label: part.label,
+          startTime: part.startTime,
+          endTime: part.endTime,
           names: workLogs
-            .filter((log) => log.shiftType === shiftType)
+            .filter((log) => log.shiftType === part.code)
             .map((log) => empMap[log.employeeId])
             .filter(Boolean),
         }))

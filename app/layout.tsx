@@ -24,6 +24,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <Link href="/employees" className="text-sm text-gray-600 hover:text-gray-900">
             직원 관리
           </Link>
+          <Link href="/shift-parts" className="text-sm text-gray-600 hover:text-gray-900">
+            파트 관리
+          </Link>
           <Link href="/schedule/generate" className="text-sm text-gray-600 hover:text-gray-900">
             근무표 생성
           </Link>

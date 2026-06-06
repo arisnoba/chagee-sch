@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Pencil, Plus, Save, Trash2, X } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import type { Employee } from "@/lib/db/schema";
 
 const PREF_LABELS: Record<string, string> = { like: "👍 선호", neutral: "😐 보통", dislike: "👎 기피" };
@@ -14,7 +16,13 @@ const PREF_COLORS: Record<string, string> = {
 const PREF_OPTIONS = ["like", "neutral", "dislike"] as const;
 const PREF_OPTION_LABELS: Record<string, string> = { like: "👍 선호", neutral: "😐 보통", dislike: "👎 기피" };
 
-type PrefForm = { openPreference: string; middlePreference: string; closePreference: string };
+type Preference = (typeof PREF_OPTIONS)[number];
+type EmployeeForm = {
+  name: string;
+  openPreference: Preference;
+  middlePreference: Preference;
+  closePreference: Preference;
+};
 
 function sortEmployeesByName(rows: Employee[]): Employee[] {
   return [...rows].sort((a, b) => a.name.localeCompare(b.name, "ko"));
@@ -24,8 +32,11 @@ export default function EmployeesPage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [editForm, setEditForm] = useState<PrefForm | null>(null);
+  const [editForm, setEditForm] = useState<EmployeeForm | null>(null);
+  const [newName, setNewName] = useState("");
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   async function load() {
     const data = await fetch("/api/employees").then((r) => r.json());
@@ -50,23 +61,90 @@ export default function EmployeesPage() {
   function startEdit(emp: Employee) {
     setEditingId(emp.id);
     setEditForm({
+      name: emp.name,
       openPreference: emp.openPreference,
       middlePreference: emp.middlePreference,
       closePreference: emp.closePreference,
     });
+    setError(null);
   }
 
   async function saveEdit(empId: number) {
     if (!editForm) return;
+    if (!editForm.name.trim()) {
+      setError("직원 이름을 입력하세요.");
+      return;
+    }
+
     setSaving(true);
-    await fetch(`/api/employees/${empId}`, {
+    setError(null);
+    const response = await fetch(`/api/employees/${empId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(editForm),
     });
+
+    if (!response.ok) {
+      const body = await response.json().catch(() => null);
+      setError(body?.error ?? "직원 정보를 저장하지 못했습니다.");
+      setSaving(false);
+      return;
+    }
+
     setEditingId(null);
     setEditForm(null);
     setSaving(false);
+    await load();
+  }
+
+  async function addEmployee() {
+    const name = newName.trim();
+
+    if (!name) {
+      setError("추가할 직원 이름을 입력하세요.");
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    const response = await fetch("/api/employees", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+
+    if (!response.ok) {
+      const body = await response.json().catch(() => null);
+      setError(body?.error ?? "직원을 추가하지 못했습니다.");
+      setSaving(false);
+      return;
+    }
+
+    setNewName("");
+    setSaving(false);
+    await load();
+  }
+
+  async function deleteEmployee(emp: Employee) {
+    if (!window.confirm(`${emp.name} 직원을 삭제할까요?`)) return;
+
+    setDeletingId(emp.id);
+    setError(null);
+    const response = await fetch(`/api/employees/${emp.id}`, { method: "DELETE" });
+
+    if (!response.ok) {
+      const body = await response.json().catch(() => null);
+      setError(body?.error ?? "직원을 삭제하지 못했습니다.");
+      setDeletingId(null);
+      return;
+    }
+
+    if (editingId === emp.id) {
+      setEditingId(null);
+      setEditForm(null);
+    }
+
+    setDeletingId(null);
     await load();
   }
 
@@ -74,8 +152,32 @@ export default function EmployeesPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">직원 관리</h1>
-        <p className="text-sm text-gray-500 mt-1">직원별 파트 성향을 확인하고 수정합니다</p>
+        <p className="text-sm text-gray-500 mt-1">직원 이름과 파트 성향을 관리합니다</p>
       </div>
+
+      <Card>
+        <CardHeader className="pb-1">
+          <CardTitle className="text-base">직원 추가</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <input
+              value={newName}
+              onChange={(event) => setNewName(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") void addEmployee();
+              }}
+              className="h-9 flex-1 rounded-lg border border-gray-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/15"
+              placeholder="직원 이름"
+            />
+            <Button onClick={addEmployee} disabled={saving} className="sm:w-auto">
+              <Plus aria-hidden />
+              추가
+            </Button>
+          </div>
+          {error ? <p className="mt-3 text-sm text-red-600">{error}</p> : null}
+        </CardContent>
+      </Card>
 
       {loading ? (
         <div className="text-center py-20 text-gray-400">불러오는 중...</div>
@@ -87,8 +189,18 @@ export default function EmployeesPage() {
             return (
               <Card key={emp.id} className="hover:shadow-md transition-shadow">
                 <CardHeader className="pb-3">
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-base">{emp.name}</CardTitle>
+                  <div className="flex items-start justify-between gap-3">
+                    {isEditing ? (
+                      <input
+                        value={editForm?.name ?? ""}
+                        onChange={(event) =>
+                          setEditForm((prev) => prev ? { ...prev, name: event.target.value } : prev)
+                        }
+                        className="h-8 min-w-0 flex-1 rounded-lg border border-gray-300 px-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-gray-900/15"
+                      />
+                    ) : (
+                      <CardTitle className="min-w-0 truncate text-base">{emp.name}</CardTitle>
+                    )}
                     <Badge variant="outline">스케줄 근무</Badge>
                   </div>
                 </CardHeader>
@@ -97,27 +209,50 @@ export default function EmployeesPage() {
                     <div className="flex items-center justify-between mb-2">
                       <p className="text-xs font-medium text-gray-500">파트 성향</p>
                       {!isEditing ? (
-                        <button
-                          onClick={() => startEdit(emp)}
-                          className="text-xs text-blue-600 hover:text-blue-800 underline"
-                        >
-                          수정
-                        </button>
+                        <div className="flex gap-1">
+                          <Button
+                            onClick={() => startEdit(emp)}
+                            variant="ghost"
+                            size="icon-xs"
+                            aria-label={`${emp.name} 수정`}
+                            title="수정"
+                          >
+                            <Pencil aria-hidden />
+                          </Button>
+                          <Button
+                            onClick={() => deleteEmployee(emp)}
+                            disabled={deletingId === emp.id}
+                            variant="ghost"
+                            size="icon-xs"
+                            aria-label={`${emp.name} 삭제`}
+                            title="삭제"
+                            className="text-red-600 hover:text-red-700"
+                          >
+                            <Trash2 aria-hidden />
+                          </Button>
+                        </div>
                       ) : (
-                        <div className="flex gap-2">
-                          <button
+                        <div className="flex gap-1">
+                          <Button
                             onClick={() => saveEdit(emp.id)}
                             disabled={saving}
-                            className="text-xs text-green-600 hover:text-green-800 font-medium"
+                            variant="ghost"
+                            size="icon-xs"
+                            aria-label={`${emp.name} 저장`}
+                            title="저장"
+                            className="text-green-700 hover:text-green-800"
                           >
-                            {saving ? "저장 중" : "저장"}
-                          </button>
-                          <button
-                            onClick={() => { setEditingId(null); setEditForm(null); }}
-                            className="text-xs text-gray-400 hover:text-gray-600"
+                            <Save aria-hidden />
+                          </Button>
+                          <Button
+                            onClick={() => { setEditingId(null); setEditForm(null); setError(null); }}
+                            variant="ghost"
+                            size="icon-xs"
+                            aria-label={`${emp.name} 취소`}
+                            title="취소"
                           >
-                            취소
-                          </button>
+                            <X aria-hidden />
+                          </Button>
                         </div>
                       )}
                     </div>
@@ -149,8 +284,8 @@ export default function EmployeesPage() {
                             <p className="text-xs font-medium text-gray-600 text-center">{label}</p>
                             <select
                               value={editForm?.[key] ?? "neutral"}
-                              onChange={(e) =>
-                                setEditForm((prev) => prev ? { ...prev, [key]: e.target.value } : prev)
+                              onChange={(event) =>
+                                setEditForm((prev) => prev ? { ...prev, [key]: event.target.value as Preference } : prev)
                               }
                               className="w-full text-xs border border-gray-300 rounded px-1 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
                             >

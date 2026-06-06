@@ -1,24 +1,24 @@
 import { Badge } from "@/components/ui/badge";
-import type { DayType, ShiftType } from "@/lib/scheduler/fairness";
-
-type WorkShiftType = Exclude<ShiftType, "off">;
+import type { DayType } from "@/lib/scheduler/fairness";
 
 export type CalendarDay = {
   date: string;
   dayLabel: string;
   dayType: DayType;
   holidayName?: string;
-  shifts: { shiftType: WorkShiftType; names: string[] }[];
+  shifts: { shiftType: string; label: string; startTime?: string; endTime?: string; names: string[] }[];
   offNames: string[];
 };
 
 const WEEKDAY_HEADERS = ["일", "월", "화", "수", "목", "금", "토"];
-const SHIFT_LABELS: Record<WorkShiftType, string> = { open: "오픈", middle: "미들", close: "마감" };
-const SHIFT_COLORS: Record<WorkShiftType, string> = {
-  open: "bg-blue-100 text-blue-800",
-  middle: "bg-green-100 text-green-800",
-  close: "bg-orange-100 text-orange-800",
-};
+const SHIFT_COLORS = [
+  "bg-blue-100 text-blue-800",
+  "bg-green-100 text-green-800",
+  "bg-orange-100 text-orange-800",
+  "bg-purple-100 text-purple-800",
+  "bg-cyan-100 text-cyan-800",
+  "bg-rose-100 text-rose-800",
+];
 
 function dayClass(dayType: DayType): string {
   if (dayType === "holiday") return "border-red-200 bg-red-50/50";
@@ -71,9 +71,12 @@ export function ScheduleCalendar({
               <div className="space-y-2">
                 {day.shifts.map((shift) => (
                   <div key={shift.shiftType} className="rounded-md border border-gray-100 bg-white/80 p-2">
-                    <span className={`inline-flex rounded px-2 py-0.5 text-xs font-medium ${SHIFT_COLORS[shift.shiftType]}`}>
-                      {SHIFT_LABELS[shift.shiftType]}
+                    <span className={`inline-flex rounded px-2 py-0.5 text-xs font-medium ${SHIFT_COLORS[day.shifts.indexOf(shift) % SHIFT_COLORS.length]}`}>
+                      {shift.label}
                     </span>
+                    {shift.startTime && shift.endTime ? (
+                      <p className="mt-1 text-[11px] text-gray-400">{shift.startTime}-{shift.endTime}</p>
+                    ) : null}
                     <p className="mt-1 text-xs leading-5 text-gray-700">{shift.names.join(", ")}</p>
                   </div>
                 ))}

@@ -1,5 +1,6 @@
 import type { Employee, ShiftLog } from "@/lib/db/schema";
 import { rankByFairness, type EmployeeWithScore, type ShiftType, type DayType } from "./fairness";
+import { DEFAULT_SHIFT_PARTS, sortShiftParts, type WorkShiftPart } from "@/lib/shift-parts";
 
 export type DaySchedule = {
   date: string;
@@ -13,6 +14,13 @@ export type DaySchedule = {
 const DAY_LABELS = ["일", "월", "화", "수", "목", "금", "토"];
 const MAX_OFF_PER_DAY = 4;
 const OFF_DAYS_PER_EMPLOYEE = 2;
+const DEFAULT_WORK_SHIFT_PARTS = DEFAULT_SHIFT_PARTS.map(({ code, label, startTime, endTime, sortOrder }) => ({
+  code,
+  label,
+  startTime,
+  endTime,
+  sortOrder,
+}));
 
 export type HolidayInput = string | { date: string; localName?: string; name?: string };
 
@@ -50,17 +58,22 @@ function prefScore(pref: string): number {
   return pref === "like" ? 2 : pref === "neutral" ? 1 : 0;
 }
 
-function getShiftPreferenceOrder(emp: Employee): ("open" | "middle" | "close")[] {
-  return [
-    { s: "open" as const, score: prefScore(emp.openPreference) },
-    { s: "middle" as const, score: prefScore(emp.middlePreference) },
-    { s: "close" as const, score: prefScore(emp.closePreference) },
-  ]
+function getShiftPreferenceScore(emp: Employee, shiftCode: string): number {
+  if (shiftCode === "open") return prefScore(emp.openPreference);
+  if (shiftCode === "middle") return prefScore(emp.middlePreference);
+  if (shiftCode === "close") return prefScore(emp.closePreference);
+  return prefScore("neutral");
+}
+
+function getShiftPreferenceOrder(emp: Employee, shiftParts: WorkShiftPart[]): string[] {
+  return shiftParts
+    .map((part) => ({ s: part.code, score: getShiftPreferenceScore(emp, part.code), sortOrder: part.sortOrder }))
     .sort((a, b) => b.score - a.score)
+    .sort((a, b) => (b.score - a.score) || (a.sortOrder - b.sortOrder))
     .map((x) => x.s);
 }
 
-function getPreferenceLabel(emp: Employee, shift: "open" | "middle" | "close"): string {
+function getPreferenceLabel(emp: Employee, shift: string): string {
   const preference = shift === "open"
     ? emp.openPreference
     : shift === "middle"
@@ -74,41 +87,52 @@ function getPreferenceLabel(emp: Employee, shift: "open" | "middle" | "close"): 
 
 function getShiftReasons(
   emp: EmployeeWithScore,
-  shift: "open" | "middle" | "close",
-  previousCloseIds: Set<number>
+  shift: string,
+  shiftParts: WorkShiftPart[],
+  previousLastShiftIds: Set<number>
 ): string[] {
   const reasons = [`공평 지표 ${emp.fairnessScore.toFixed(1)}점`];
   reasons.push(getPreferenceLabel(emp, shift));
 
-  if (shift === "close") reasons.push("마감 인원 우선 배정");
-  if (previousCloseIds.has(emp.id) && shift !== "open") reasons.push("마감 다음날 오픈 회피");
+  const firstShift = shiftParts[0]?.code;
+  const lastShift = shiftParts[shiftParts.length - 1]?.code;
+
+  if (shift === lastShift) reasons.push("마지막 파트 인원 우선 배정");
+  if (previousLastShiftIds.has(emp.id) && shift !== firstShift) reasons.push("마지막 파트 다음날 첫 파트 회피");
 
   return reasons;
 }
 
-// 공정성 순으로 정렬된 직원들을 오픈/미들/마감에 배분 (휴무 제외 전원 투입)
+function getShiftCapacities(workerCount: number, shiftParts: WorkShiftPart[]): Record<string, number> {
+  const base = Math.floor(workerCount / shiftParts.length);
+  let extra = workerCount % shiftParts.length;
+  const cap = Object.fromEntries(shiftParts.map((part) => [part.code, base]));
+
+  for (let index = shiftParts.length - 1; index >= 0 && extra > 0; index--) {
+    cap[shiftParts[index].code]++;
+    extra--;
+  }
+
+  return cap;
+}
+
+// 공정성 순으로 정렬된 직원들을 설정된 근무 파트에 배분 (휴무 제외 전원 투입)
 function assignShifts(
   rankedWorkers: EmployeeWithScore[],
-  previousCloseIds: Set<number> = new Set()
+  shiftParts: WorkShiftPart[],
+  previousLastShiftIds: Set<number> = new Set()
 ): DaySchedule["slots"] {
   const W = rankedWorkers.length;
   if (W === 0) return [];
 
-  const extra = W % 3;
-  const base = Math.floor(W / 3);
-  // 나머지 인원: 마감에 먼저, 그 다음 미들에 배분해 오픈보다 마감 인원을 두텁게 둔다.
-  const cap = {
-    open: base,
-    middle: base + (extra >= 2 ? 1 : 0),
-    close: base + (extra >= 1 ? 1 : 0),
-  };
-
+  const cap = getShiftCapacities(W, shiftParts);
   const slots: DaySchedule["slots"] = [];
+  const firstShift = shiftParts[0]?.code;
 
   for (const emp of rankedWorkers) {
-    const prefOrder = getShiftPreferenceOrder(emp);
-    const shiftOrder = previousCloseIds.has(emp.id)
-      ? [...prefOrder.filter((shift) => shift !== "open"), "open" as const]
+    const prefOrder = getShiftPreferenceOrder(emp, shiftParts);
+    const shiftOrder = previousLastShiftIds.has(emp.id) && firstShift
+      ? [...prefOrder.filter((shift) => shift !== firstShift), firstShift]
       : prefOrder;
     let assigned = false;
 
@@ -118,7 +142,7 @@ function assignShifts(
           shiftType: shift,
           employeeId: emp.id,
           employeeName: emp.name,
-          reasons: getShiftReasons(emp, shift, previousCloseIds),
+          reasons: getShiftReasons(emp, shift, shiftParts, previousLastShiftIds),
         });
         cap[shift]--;
         assigned = true;
@@ -127,13 +151,13 @@ function assignShifts(
     }
 
     if (!assigned) {
-      for (const shift of ["close", "middle", "open"] as const) {
+      for (const shift of [...shiftParts].reverse().map((part) => part.code)) {
         if (cap[shift] > 0) {
           slots.push({
             shiftType: shift,
             employeeId: emp.id,
             employeeName: emp.name,
-            reasons: getShiftReasons(emp, shift, previousCloseIds),
+            reasons: getShiftReasons(emp, shift, shiftParts, previousLastShiftIds),
           });
           cap[shift]--;
           break;
@@ -207,9 +231,11 @@ export function generateWeekSchedule(
   weekStart: Date,
   employees: Employee[],
   pastLogs: ShiftLog[],
-  holidays: HolidayInput[] = []
+  holidays: HolidayInput[] = [],
+  configuredShiftParts: WorkShiftPart[] = DEFAULT_WORK_SHIFT_PARTS
 ): DaySchedule[] {
   const weekDays = buildWeekDays(weekStart, holidays);
+  const shiftParts = sortShiftParts(configuredShiftParts).slice(0, 6);
   const workingLogs: ShiftLog[] = [...pastLogs];
   let nextId = 100000;
 
@@ -250,12 +276,13 @@ export function generateWeekSchedule(
     const previousDate = new Date(day.date);
     previousDate.setDate(previousDate.getDate() - 1);
     const previousDateString = previousDate.toISOString().slice(0, 10);
-    const previousCloseIds = new Set(
+    const lastShiftCode = shiftParts[shiftParts.length - 1]?.code;
+    const previousLastShiftIds = new Set(
       workingLogs
-        .filter((log) => log.date === previousDateString && log.shiftType === "close")
+        .filter((log) => log.date === previousDateString && log.shiftType === lastShiftCode)
         .map((log) => log.employeeId)
     );
-    const slots = assignShifts(ranked, previousCloseIds);
+    const slots = assignShifts(ranked, shiftParts, previousLastShiftIds);
 
     for (const slot of slots) {
       workingLogs.push({

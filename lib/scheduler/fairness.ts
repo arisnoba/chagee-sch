@@ -1,15 +1,8 @@
 import type { Employee, ShiftLog } from "@/lib/db/schema";
 
-export type ShiftType = "open" | "middle" | "close" | "off";
+export type ShiftType = string;
 export type DayType = "weekday" | "weekend" | "holiday";
 export type Preference = "like" | "neutral" | "dislike";
-
-const BASE_BURDEN: Record<ShiftType, number> = {
-  open: 1,
-  middle: 0,
-  close: 2,
-  off: 0,
-};
 
 const DAY_REWARD: Record<DayType, number> = {
   weekday: 1,
@@ -30,9 +23,16 @@ function getPreference(employee: Employee, shiftType: ShiftType): Preference {
   return "neutral";
 }
 
+function getBaseBurden(shiftType: ShiftType): number {
+  if (shiftType === "off") return 0;
+  if (shiftType === "middle") return 0;
+  if (shiftType === "close") return 2;
+  return 1;
+}
+
 export function calcBurden(employee: Employee, shiftType: ShiftType): number {
   if (shiftType === "off") return 0;
-  const base = BASE_BURDEN[shiftType];
+  const base = getBaseBurden(shiftType);
   const multiplier = PREFERENCE_MULTIPLIER[getPreference(employee, shiftType)];
   return base * multiplier;
 }

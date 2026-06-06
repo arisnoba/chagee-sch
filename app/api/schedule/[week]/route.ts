@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db/client";
 import { employees, shiftLogs, schedules } from "@/lib/db/schema";
 import { getKoreaHolidaysForDates, holidayNameMap } from "@/lib/calendar/koreaHolidays";
+import { getActiveShiftParts } from "@/lib/db/shiftParts";
 import { eq, and } from "drizzle-orm";
 import type { DaySchedule } from "@/lib/scheduler/generate";
 
@@ -27,7 +28,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ week: s
   const logs = await db.select().from(shiftLogs).where(eq(shiftLogs.weekLabel, week));
   const emps = await db.select().from(employees);
   const holidays = await getKoreaHolidaysForDates([...new Set(logs.map((log) => log.date))]);
-  return NextResponse.json({ schedule: schedule[0], logs, employees: emps, holidays: holidayNameMap(holidays) });
+  const shiftParts = await getActiveShiftParts();
+  return NextResponse.json({ schedule: schedule[0], logs, employees: emps, holidays: holidayNameMap(holidays), shiftParts });
 }
 
 export async function PATCH(_req: Request, { params }: { params: Promise<{ week: string }> }) {

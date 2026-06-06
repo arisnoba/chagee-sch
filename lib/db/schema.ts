@@ -17,10 +17,21 @@ export const shiftLogs = sqliteTable("shift_logs", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   employeeId: integer("employee_id").notNull().references(() => employees.id),
   date: text("date").notNull(), // YYYY-MM-DD
-  shiftType: text("shift_type", { enum: ["open", "middle", "close", "off"] }).notNull(),
+  shiftType: text("shift_type").notNull(),
   dayType: text("day_type", { enum: ["weekday", "weekend", "holiday"] }).notNull(),
   weekLabel: text("week_label").notNull(), // e.g. "2025-W20"
   isConfirmed: integer("is_confirmed", { mode: "boolean" }).notNull().default(false),
+  createdAt: text("created_at").default(sql`(datetime('now'))`),
+});
+
+export const shiftParts = sqliteTable("shift_parts", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  code: text("code").notNull().unique(),
+  label: text("label").notNull(),
+  startTime: text("start_time").notNull(),
+  endTime: text("end_time").notNull(),
+  sortOrder: integer("sort_order").notNull(),
+  isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
   createdAt: text("created_at").default(sql`(datetime('now'))`),
 });
 
@@ -37,4 +48,6 @@ export type Employee = typeof employees.$inferSelect;
 export type NewEmployee = typeof employees.$inferInsert;
 export type ShiftLog = typeof shiftLogs.$inferSelect;
 export type NewShiftLog = typeof shiftLogs.$inferInsert;
+export type ShiftPart = typeof shiftParts.$inferSelect;
+export type NewShiftPart = typeof shiftParts.$inferInsert;
 export type Schedule = typeof schedules.$inferSelect;

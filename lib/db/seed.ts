@@ -1,5 +1,6 @@
 import { db } from "./client";
-import { employees, shiftLogs, schedules } from "./schema";
+import { DEFAULT_SHIFT_PARTS } from "@/lib/shift-parts";
+import { employees, shiftLogs, schedules, shiftParts } from "./schema";
 
 const ALL_DAYS = JSON.stringify(["mon", "tue", "wed", "thu", "fri", "sat", "sun"]);
 
@@ -151,7 +152,11 @@ export async function seed() {
 
   await db.delete(shiftLogs);
   await db.delete(schedules);
+  await db.delete(shiftParts);
   await db.delete(employees);
+
+  await db.insert(shiftParts).values(DEFAULT_SHIFT_PARTS);
+  console.log(`Inserted ${DEFAULT_SHIFT_PARTS.length} shift parts`);
 
   const inserted = await db.insert(employees).values(MOCK_EMPLOYEES).returning();
   console.log(`Inserted ${inserted.length} employees`);

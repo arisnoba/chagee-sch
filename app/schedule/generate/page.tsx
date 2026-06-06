@@ -8,17 +8,23 @@ import { Button } from "@/components/ui/button";
 import { ScheduleCalendar, type CalendarDay } from "@/components/schedule-calendar";
 import type { DaySchedule } from "@/lib/scheduler/generate";
 import type { ShiftType } from "@/lib/scheduler/fairness";
+import type { WorkShiftPart } from "@/lib/shift-parts";
 
 const MAX_OFF_PER_DAY = 4;
-const WORK_SHIFT_TYPES = ["close", "middle", "open"] as const;
-const EDIT_SHIFT_TYPES = ["open", "middle", "close", "off"] as const;
-const SHIFT_LABELS: Record<ShiftType, string> = { open: "오픈", middle: "미들", close: "마감", off: "휴무" };
-const SHIFT_STYLES: Record<ShiftType, string> = {
-  open: "bg-blue-100 text-blue-800 border-blue-200",
-  middle: "bg-green-100 text-green-800 border-green-200",
-  close: "bg-orange-100 text-orange-800 border-orange-200",
-  off: "bg-gray-100 text-gray-600 border-gray-200",
-};
+const DEFAULT_SHIFT_PARTS: WorkShiftPart[] = [
+  { code: "open", label: "오픈", startTime: "09:00", endTime: "18:00", sortOrder: 0 },
+  { code: "middle", label: "미들", startTime: "12:00", endTime: "21:00", sortOrder: 1 },
+  { code: "close", label: "마감", startTime: "15:00", endTime: "00:00", sortOrder: 2 },
+];
+const SHIFT_STYLE_CLASSES = [
+  "bg-blue-100 text-blue-800 border-blue-200",
+  "bg-green-100 text-green-800 border-green-200",
+  "bg-orange-100 text-orange-800 border-orange-200",
+  "bg-purple-100 text-purple-800 border-purple-200",
+  "bg-cyan-100 text-cyan-800 border-cyan-200",
+  "bg-rose-100 text-rose-800 border-rose-200",
+];
+const OFF_SHIFT_STYLE = "bg-gray-100 text-gray-600 border-gray-200";
 
 type WorkShiftType = Exclude<ShiftType, "off">;
 type ScheduleEmployee = { employeeId: number; employeeName: string; reasons?: string[] };
@@ -39,17 +45,31 @@ function getWeekLabel(sunday: Date): string {
   return `${sunday.getFullYear()}-W${String(week).padStart(2, "0")}`;
 }
 
-function toCalendarDays(days: DaySchedule[]): CalendarDay[] {
+function getShiftLabel(shiftParts: WorkShiftPart[], shiftType: ShiftType): string {
+  if (shiftType === "off") return "휴무";
+  return shiftParts.find((part) => part.code === shiftType)?.label ?? shiftType;
+}
+
+function getShiftStyle(shiftParts: WorkShiftPart[], shiftType: ShiftType): string {
+  if (shiftType === "off") return OFF_SHIFT_STYLE;
+  const index = shiftParts.findIndex((part) => part.code === shiftType);
+  return SHIFT_STYLE_CLASSES[(index >= 0 ? index : 0) % SHIFT_STYLE_CLASSES.length];
+}
+
+function toCalendarDays(days: DaySchedule[], shiftParts: WorkShiftPart[]): CalendarDay[] {
   return days.map((day) => ({
     date: day.date,
     dayLabel: day.dayLabel,
     dayType: day.dayType,
     holidayName: day.holidayName,
-    shifts: (["open", "middle", "close"] as const)
-      .map((shiftType) => ({
-        shiftType,
+    shifts: shiftParts
+      .map((part) => ({
+        shiftType: part.code,
+        label: part.label,
+        startTime: part.startTime,
+        endTime: part.endTime,
         names: day.slots
-          .filter((slot) => slot.shiftType === shiftType)
+          .filter((slot) => slot.shiftType === part.code)
           .map((slot) => slot.employeeName),
       }))
       .filter((shift) => shift.names.length > 0),
@@ -98,21 +118,24 @@ function getConsecutiveOffNames(days: DaySchedule[]): string[] {
   return [...new Set(names)].sort((a, b) => a.localeCompare(b, "ko"));
 }
 
-function getCloseOpenNames(days: DaySchedule[]): string[] {
+function getCloseOpenNames(days: DaySchedule[], shiftParts: WorkShiftPart[]): string[] {
   const sortedDays = [...days].sort((a, b) => a.date.localeCompare(b.date));
   const names: string[] = [];
+  const firstShift = shiftParts[0]?.code;
+  const lastShift = shiftParts[shiftParts.length - 1]?.code;
+  if (!firstShift || !lastShift) return names;
 
   for (let index = 1; index < sortedDays.length; index++) {
     const previousDay = sortedDays[index - 1];
     const currentDay = sortedDays[index];
     const previousCloseIds = new Set(
       previousDay.slots
-        .filter((slot) => slot.shiftType === "close")
+        .filter((slot) => slot.shiftType === lastShift)
         .map((slot) => slot.employeeId)
     );
 
     for (const slot of currentDay.slots) {
-      if (slot.shiftType === "open" && previousCloseIds.has(slot.employeeId)) {
+      if (slot.shiftType === firstShift && previousCloseIds.has(slot.employeeId)) {
         names.push(slot.employeeName);
       }
     }
@@ -126,11 +149,12 @@ function getEmployeeShift(day: DaySchedule, employeeId: number): ShiftType {
   return day.slots.find((slot) => slot.employeeId === employeeId)?.shiftType ?? "middle";
 }
 
-function getLeastLoadedWorkShift(day: DaySchedule, excludeShift?: ShiftType): WorkShiftType {
-  const counts: Record<WorkShiftType, number> = { open: 0, middle: 0, close: 0 };
+function getLeastLoadedWorkShift(day: DaySchedule, shiftParts: WorkShiftPart[], excludeShift?: ShiftType): WorkShiftType {
+  const counts = Object.fromEntries(shiftParts.map((part) => [part.code, 0]));
   for (const slot of day.slots) counts[slot.shiftType as WorkShiftType]++;
 
-  return [...WORK_SHIFT_TYPES]
+  return [...shiftParts]
+    .map((part) => part.code)
     .filter((shift) => shift !== excludeShift)
     .sort((a, b) => counts[a] - counts[b])[0] ?? "middle";
 }
@@ -172,8 +196,9 @@ function getSelectedDayAssignments(day: DaySchedule): {
       reasons: employee.reasons ?? [],
     })),
   ].sort((a, b) => {
-    const shiftOrder: Record<ShiftType, number> = { open: 0, middle: 1, close: 2, off: 3 };
-    const shiftDiff = shiftOrder[a.shiftType] - shiftOrder[b.shiftType];
+    const knownOrder = ["open", "middle", "close", "off"];
+    const shiftDiff = (knownOrder.indexOf(a.shiftType) === -1 ? 99 : knownOrder.indexOf(a.shiftType))
+      - (knownOrder.indexOf(b.shiftType) === -1 ? 99 : knownOrder.indexOf(b.shiftType));
     if (shiftDiff !== 0) return shiftDiff;
     return a.employeeName.localeCompare(b.employeeName, "ko");
   });
@@ -183,6 +208,7 @@ export default function GeneratePage() {
   const router = useRouter();
   const [selectedDate, setSelectedDate] = useState(() => formatDate(getSunday(new Date())));
   const [preview, setPreview] = useState<DaySchedule[] | null>(null);
+  const [shiftParts, setShiftParts] = useState<WorkShiftPart[]>(DEFAULT_SHIFT_PARTS);
   const [weekLabel, setWeekLabel] = useState("");
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -190,7 +216,7 @@ export default function GeneratePage() {
   const [selectedEditDate, setSelectedEditDate] = useState("");
   const [selectedShift, setSelectedShift] = useState<ShiftType>("off");
   const consecutiveOffNames = useMemo(() => preview ? getConsecutiveOffNames(preview) : [], [preview]);
-  const closeOpenNames = useMemo(() => preview ? getCloseOpenNames(preview) : [], [preview]);
+  const closeOpenNames = useMemo(() => preview ? getCloseOpenNames(preview, shiftParts) : [], [preview, shiftParts]);
   const selectedDay = useMemo(
     () => preview?.find((day) => day.date === selectedEditDate) ?? preview?.[0],
     [preview, selectedEditDate]
@@ -210,6 +236,7 @@ export default function GeneratePage() {
 
     if (res.ok) {
       const data = await res.json();
+      setShiftParts(data.shiftParts ?? DEFAULT_SHIFT_PARTS);
       setPreview(data.days);
       setSelectedEditDate(data.days[0]?.date ?? "");
     }
@@ -258,8 +285,8 @@ export default function GeneratePage() {
         nextShift = selectedShift;
       } else if (currentShift === selectedShift) {
         nextShift = selectedShift === "off"
-          ? getLeastLoadedWorkShift(day)
-          : getLeastLoadedWorkShift(day, selectedShift);
+          ? getLeastLoadedWorkShift(day, shiftParts)
+          : getLeastLoadedWorkShift(day, shiftParts, selectedShift);
       } else {
         return day;
       }
@@ -327,7 +354,7 @@ export default function GeneratePage() {
           {saveError && <p className="text-sm text-red-500">{saveError}</p>}
 
           <ScheduleCalendar
-            days={toCalendarDays(preview)}
+            days={toCalendarDays(preview, shiftParts)}
             selectedDate={selectedDay?.date}
             onDaySelect={setSelectedEditDate}
           />
@@ -346,23 +373,23 @@ export default function GeneratePage() {
                   <p className="text-xs text-amber-600">연속 휴무: {consecutiveOffNames.join(", ")}</p>
                 )}
                 {closeOpenNames.length > 0 && (
-                  <p className="text-xs text-red-500">마감 후 오픈: {closeOpenNames.join(", ")}</p>
+                  <p className="text-xs text-red-500">마지막 파트 후 첫 파트: {closeOpenNames.join(", ")}</p>
                 )}
               </div>
 
               <div className="mb-4 flex flex-wrap gap-2">
-                {EDIT_SHIFT_TYPES.map((shiftType) => (
+                {[...shiftParts.map((part) => part.code), "off"].map((shiftType) => (
                   <button
                     key={shiftType}
                     type="button"
                     onClick={() => setSelectedShift(shiftType)}
                     className={`rounded-md border px-3 py-1.5 text-sm font-medium ${
                       selectedShift === shiftType
-                        ? SHIFT_STYLES[shiftType]
+                        ? getShiftStyle(shiftParts, shiftType)
                         : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
                     }`}
                   >
-                    {SHIFT_LABELS[shiftType]}
+                    {getShiftLabel(shiftParts, shiftType)}
                   </button>
                 ))}
               </div>
@@ -377,7 +404,7 @@ export default function GeneratePage() {
                     <label
                       key={employee.employeeId}
                       className={`flex min-h-12 items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm ${
-                        checked ? SHIFT_STYLES[selectedShift] : "border-gray-200 bg-white text-gray-700"
+                        checked ? getShiftStyle(shiftParts, selectedShift) : "border-gray-200 bg-white text-gray-700"
                       } ${offLimitReached ? "opacity-45" : ""}`}
                     >
                       <span className="flex items-center gap-2">
@@ -390,7 +417,7 @@ export default function GeneratePage() {
                         />
                         <span>{employee.employeeName}</span>
                       </span>
-                      <span className="text-[11px] text-gray-400">{SHIFT_LABELS[currentShift]}</span>
+                      <span className="text-[11px] text-gray-400">{getShiftLabel(shiftParts, currentShift)}</span>
                     </label>
                   );
                 })}
@@ -405,8 +432,8 @@ export default function GeneratePage() {
                       className="rounded-md border border-gray-100 bg-gray-50 px-3 py-2"
                     >
                       <div className="flex items-center gap-2">
-                        <span className={`rounded border px-1.5 py-0.5 text-[11px] font-medium ${SHIFT_STYLES[assignment.shiftType]}`}>
-                          {SHIFT_LABELS[assignment.shiftType]}
+                        <span className={`rounded border px-1.5 py-0.5 text-[11px] font-medium ${getShiftStyle(shiftParts, assignment.shiftType)}`}>
+                          {getShiftLabel(shiftParts, assignment.shiftType)}
                         </span>
                         <span className="text-sm font-medium text-gray-800">{assignment.employeeName}</span>
                       </div>
