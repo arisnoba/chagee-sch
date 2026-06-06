@@ -3,8 +3,15 @@
 import { useEffect, useState } from "react";
 import { Pencil, Plus, Save, Trash2, X } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import type { Employee } from "@/lib/db/schema";
 
 const PREF_LABELS: Record<string, string> = { like: "👍 선호", neutral: "😐 보통", dislike: "👎 기피" };
@@ -182,127 +189,130 @@ export default function EmployeesPage() {
       {loading ? (
         <div className="text-center py-20 text-gray-400">불러오는 중...</div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {employees.map((emp) => {
-            const isEditing = editingId === emp.id;
+        <Card>
+          <CardHeader className="pb-1">
+            <CardTitle className="text-base">직원 목록</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="pl-4">이름</TableHead>
+                  <TableHead>오픈</TableHead>
+                  <TableHead>미들</TableHead>
+                  <TableHead>마감</TableHead>
+                  <TableHead className="pr-4 text-right">작업</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {employees.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={5} className="h-28 text-center text-gray-400">
+                      등록된 직원이 없습니다.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  employees.map((emp) => {
+                    const isEditing = editingId === emp.id;
+                    const preferences = [
+                      { key: "openPreference" as const, value: emp.openPreference },
+                      { key: "middlePreference" as const, value: emp.middlePreference },
+                      { key: "closePreference" as const, value: emp.closePreference },
+                    ];
 
-            return (
-              <Card key={emp.id} className="hover:shadow-md transition-shadow">
-                <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between gap-3">
-                    {isEditing ? (
-                      <input
-                        value={editForm?.name ?? ""}
-                        onChange={(event) =>
-                          setEditForm((prev) => prev ? { ...prev, name: event.target.value } : prev)
-                        }
-                        className="h-8 min-w-0 flex-1 rounded-lg border border-gray-300 px-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-gray-900/15"
-                      />
-                    ) : (
-                      <CardTitle className="min-w-0 truncate text-base">{emp.name}</CardTitle>
-                    )}
-                    <Badge variant="outline">스케줄 근무</Badge>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <p className="text-xs font-medium text-gray-500">파트 성향</p>
-                      {!isEditing ? (
-                        <div className="flex gap-1">
-                          <Button
-                            onClick={() => startEdit(emp)}
-                            variant="ghost"
-                            size="icon-xs"
-                            aria-label={`${emp.name} 수정`}
-                            title="수정"
-                          >
-                            <Pencil aria-hidden />
-                          </Button>
-                          <Button
-                            onClick={() => deleteEmployee(emp)}
-                            disabled={deletingId === emp.id}
-                            variant="ghost"
-                            size="icon-xs"
-                            aria-label={`${emp.name} 삭제`}
-                            title="삭제"
-                            className="text-red-600 hover:text-red-700"
-                          >
-                            <Trash2 aria-hidden />
-                          </Button>
-                        </div>
-                      ) : (
-                        <div className="flex gap-1">
-                          <Button
-                            onClick={() => saveEdit(emp.id)}
-                            disabled={saving}
-                            variant="ghost"
-                            size="icon-xs"
-                            aria-label={`${emp.name} 저장`}
-                            title="저장"
-                            className="text-green-700 hover:text-green-800"
-                          >
-                            <Save aria-hidden />
-                          </Button>
-                          <Button
-                            onClick={() => { setEditingId(null); setEditForm(null); setError(null); }}
-                            variant="ghost"
-                            size="icon-xs"
-                            aria-label={`${emp.name} 취소`}
-                            title="취소"
-                          >
-                            <X aria-hidden />
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-
-                    {!isEditing ? (
-                      <div className="grid grid-cols-3 gap-1.5">
-                        {[
-                          { label: "오픈", value: emp.openPreference },
-                          { label: "미들", value: emp.middlePreference },
-                          { label: "마감", value: emp.closePreference },
-                        ].map(({ label, value }) => (
-                          <div
-                            key={label}
-                            className={`text-center rounded border px-1 py-1.5 text-xs ${PREF_COLORS[value]}`}
-                          >
-                            <div className="font-medium text-gray-700 mb-0.5">{label}</div>
-                            <div>{PREF_LABELS[value]}</div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-3 gap-1.5">
-                        {([
-                          { key: "openPreference" as const, label: "오픈" },
-                          { key: "middlePreference" as const, label: "미들" },
-                          { key: "closePreference" as const, label: "마감" },
-                        ] as const).map(({ key, label }) => (
-                          <div key={key} className="space-y-1">
-                            <p className="text-xs font-medium text-gray-600 text-center">{label}</p>
-                            <select
-                              value={editForm?.[key] ?? "neutral"}
+                    return (
+                      <TableRow key={emp.id}>
+                        <TableCell className="pl-4 font-medium">
+                          {isEditing ? (
+                            <input
+                              value={editForm?.name ?? ""}
                               onChange={(event) =>
-                                setEditForm((prev) => prev ? { ...prev, [key]: event.target.value as Preference } : prev)
+                                setEditForm((prev) => prev ? { ...prev, name: event.target.value } : prev)
                               }
-                              className="w-full text-xs border border-gray-300 rounded px-1 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                            >
-                              {PREF_OPTIONS.map((opt) => (
-                                <option key={opt} value={opt}>{PREF_OPTION_LABELS[opt]}</option>
-                              ))}
-                            </select>
-                          </div>
+                              className="h-8 w-36 rounded-lg border border-gray-300 px-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-gray-900/15"
+                            />
+                          ) : (
+                            emp.name
+                          )}
+                        </TableCell>
+                        {preferences.map(({ key, value }) => (
+                          <TableCell key={key}>
+                            {isEditing ? (
+                              <select
+                                value={editForm?.[key] ?? "neutral"}
+                                onChange={(event) =>
+                                  setEditForm((prev) => prev ? { ...prev, [key]: event.target.value as Preference } : prev)
+                                }
+                                className="h-8 w-24 rounded-lg border border-gray-300 bg-white px-2 text-xs focus:outline-none focus:ring-2 focus:ring-gray-900/15"
+                              >
+                                {PREF_OPTIONS.map((opt) => (
+                                  <option key={opt} value={opt}>{PREF_OPTION_LABELS[opt]}</option>
+                                ))}
+                              </select>
+                            ) : (
+                              <span className={`inline-flex rounded border px-2 py-1 text-xs font-medium ${PREF_COLORS[value]}`}>
+                                {PREF_LABELS[value]}
+                              </span>
+                            )}
+                          </TableCell>
                         ))}
-                      </div>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
+                        <TableCell className="pr-4">
+                          {!isEditing ? (
+                            <div className="flex justify-end gap-1">
+                              <Button
+                                onClick={() => startEdit(emp)}
+                                variant="ghost"
+                                size="icon-xs"
+                                aria-label={`${emp.name} 수정`}
+                                title="수정"
+                              >
+                                <Pencil data-icon="inline-start" aria-hidden />
+                              </Button>
+                              <Button
+                                onClick={() => deleteEmployee(emp)}
+                                disabled={deletingId === emp.id}
+                                variant="ghost"
+                                size="icon-xs"
+                                aria-label={`${emp.name} 삭제`}
+                                title="삭제"
+                                className="text-red-600 hover:text-red-700"
+                              >
+                                <Trash2 data-icon="inline-start" aria-hidden />
+                              </Button>
+                            </div>
+                          ) : (
+                            <div className="flex justify-end gap-1">
+                              <Button
+                                onClick={() => saveEdit(emp.id)}
+                                disabled={saving}
+                                variant="ghost"
+                                size="icon-xs"
+                                aria-label={`${emp.name} 저장`}
+                                title="저장"
+                                className="text-green-700 hover:text-green-800"
+                              >
+                                <Save data-icon="inline-start" aria-hidden />
+                              </Button>
+                              <Button
+                                onClick={() => { setEditingId(null); setEditForm(null); setError(null); }}
+                                variant="ghost"
+                                size="icon-xs"
+                                aria-label={`${emp.name} 취소`}
+                                title="취소"
+                              >
+                                <X data-icon="inline-start" aria-hidden />
+                              </Button>
+                            </div>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
       )}
     </div>
   );
