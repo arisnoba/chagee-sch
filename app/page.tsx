@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import { BarChart, Bar, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import type { EmployeeWithScore } from "@/lib/scheduler/fairness";
 
 const PREF_COLORS = { like: "text-green-600 bg-green-50", neutral: "text-gray-500 bg-gray-100", dislike: "text-red-500 bg-red-50" };
@@ -203,7 +203,12 @@ export default function DashboardPage() {
                     }}
                     cursor={{ fill: "#f3f4f6" }}
                   />
-                  <Bar dataKey="fairnessScore" radius={[0, 4, 4, 0]} fill="#22c55e" />
+                  <Bar dataKey="fairnessScore" radius={[0, 4, 4, 0]}>
+                    {chartData.map((entry) => {
+                      const tier = getTier(entry.fairnessScore, thresholds);
+                      return <Cell key={entry.id} fill={getTierStyle(tier).bar} />;
+                    })}
+                  </Bar>
                 </BarChart>
               </ResponsiveContainer>
             </CardContent>
