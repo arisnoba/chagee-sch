@@ -55,11 +55,61 @@ export function calcFairnessScore(employee: Employee, logs: ShiftLog[]): number 
 
 export type EmployeeWithScore = Employee & { fairnessScore: number };
 
+function hashSeed(value: string): number {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index++) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function nextRandom(seed: number): () => number {
+  let state = seed || 1;
+  return () => {
+    state = Math.imul(state, 1664525) + 1013904223;
+    return ((state >>> 0) / 4294967296);
+  };
+}
+
+function shuffleTieGroup<T extends { id: number }>(items: T[], seed: string): T[] {
+  const result = [...items];
+  const random = nextRandom(hashSeed(seed));
+
+  for (let index = result.length - 1; index > 0; index--) {
+    const swapIndex = Math.floor(random() * (index + 1));
+    [result[index], result[swapIndex]] = [result[swapIndex], result[index]];
+  }
+
+  return result;
+}
+
 export function rankByFairness(
   employees: Employee[],
-  logs: ShiftLog[]
+  logs: ShiftLog[],
+  tieSeed?: string
 ): EmployeeWithScore[] {
-  return employees
+  const ranked = employees
     .map((e) => ({ ...e, fairnessScore: calcFairnessScore(e, logs) }))
     .sort((a, b) => b.fairnessScore - a.fairnessScore);
+
+  if (!tieSeed) return ranked;
+
+  const result: EmployeeWithScore[] = [];
+  let index = 0;
+
+  while (index < ranked.length) {
+    const score = ranked[index].fairnessScore;
+    const group = [ranked[index]];
+    index++;
+
+    while (index < ranked.length && ranked[index].fairnessScore === score) {
+      group.push(ranked[index]);
+      index++;
+    }
+
+    result.push(...shuffleTieGroup(group, `${tieSeed}:${score}`));
+  }
+
+  return result;
 }
