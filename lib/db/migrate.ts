@@ -2,7 +2,26 @@ import { createClient } from "@libsql/client";
 
 async function hasColumn(client: ReturnType<typeof createClient>, tableName: string, columnName: string): Promise<boolean> {
   const result = await client.execute(`PRAGMA table_info(${tableName})`);
-  return result.rows.some((row) => row.name === columnName);
+  return result.rows.some((row) => {
+    const record = row as Record<string, unknown>;
+    return record.name === columnName || record[1] === columnName;
+  });
+}
+
+async function addColumnIfMissing(
+  client: ReturnType<typeof createClient>,
+  tableName: string,
+  columnName: string,
+  definition: string
+): Promise<void> {
+  if (await hasColumn(client, tableName, columnName)) return;
+
+  try {
+    await client.execute(`ALTER TABLE ${tableName} ADD COLUMN ${definition}`);
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("duplicate column name")) return;
+    throw error;
+  }
 }
 
 export async function migrate() {
@@ -26,9 +45,12 @@ export async function migrate() {
     )
   `);
 
-  if (!(await hasColumn(client, "employees", "part_preferences"))) {
-    await client.execute("ALTER TABLE employees ADD COLUMN part_preferences TEXT NOT NULL DEFAULT '{}'");
-  }
+  await addColumnIfMissing(
+    client,
+    "employees",
+    "part_preferences",
+    "part_preferences TEXT NOT NULL DEFAULT '{}'"
+  );
 
   await client.execute(`
     UPDATE employees
