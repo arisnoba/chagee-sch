@@ -1,12 +1,30 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Save, Trash2 } from "lucide-react";
+import {
+  closestCenter,
+  DndContext,
+  type DragEndEvent,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { ArrowDown, ArrowUp, GripVertical, Plus, Save, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { addNineHours, MAX_SHIFT_PARTS } from "@/lib/shift-parts";
 
 type ShiftPartForm = {
+  clientId: string;
   code?: string;
   label: string;
   startTime: string;
@@ -22,12 +40,133 @@ function buildTimeOptions(): string[] {
   });
 }
 
+function createClientId(): string {
+  return globalThis.crypto?.randomUUID?.() ?? `part-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 function normalizeRows(rows: ShiftPartForm[]): ShiftPartForm[] {
   return rows.map((row, index) => ({
     ...row,
+    clientId: row.clientId ?? row.code ?? createClientId(),
     endTime: addNineHours(row.startTime),
     sortOrder: index,
   }));
+}
+
+type SortablePartRowProps = {
+  part: ShiftPartForm;
+  index: number;
+  partCount: number;
+  timeOptions: string[];
+  onMove: (index: number, direction: -1 | 1) => void;
+  onRemove: (index: number) => void;
+  onUpdate: (index: number, updates: Partial<ShiftPartForm>) => void;
+};
+
+function SortablePartRow({
+  part,
+  index,
+  partCount,
+  timeOptions,
+  onMove,
+  onRemove,
+  onUpdate,
+}: SortablePartRowProps) {
+  const {
+    attributes,
+    listeners,
+    setActivatorNodeRef,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: part.clientId });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging ? 10 : undefined,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`grid gap-3 rounded-lg border border-gray-200 bg-white p-3 md:grid-cols-[40px_56px_1fr_160px_160px_40px] md:items-end ${
+        isDragging ? "shadow-lg ring-2 ring-gray-900/10" : ""
+      }`}
+    >
+      <button
+        ref={setActivatorNodeRef}
+        type="button"
+        className="flex h-9 w-9 cursor-grab items-center justify-center rounded-lg border border-gray-200 bg-gray-50 text-gray-500 outline-none transition hover:bg-gray-100 active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-gray-900/20 md:self-end"
+        aria-label={`${part.label} 드래그해서 순서 변경`}
+        title="드래그해서 순서 변경"
+        {...attributes}
+        {...listeners}
+      >
+        <GripVertical aria-hidden className="size-4" />
+      </button>
+      <div className="flex items-end gap-1 md:h-full md:flex-col md:justify-end">
+        <Button
+          onClick={() => onMove(index, -1)}
+          disabled={index === 0}
+          variant="outline"
+          size="icon-sm"
+          aria-label={`${part.label} 위로 이동`}
+          title="위로 이동"
+        >
+          <ArrowUp aria-hidden />
+        </Button>
+        <Button
+          onClick={() => onMove(index, 1)}
+          disabled={index === partCount - 1}
+          variant="outline"
+          size="icon-sm"
+          aria-label={`${part.label} 아래로 이동`}
+          title="아래로 이동"
+        >
+          <ArrowDown aria-hidden />
+        </Button>
+      </div>
+      <label className="space-y-1">
+        <span className="text-xs font-medium text-gray-500">파트 이름</span>
+        <input
+          value={part.label}
+          onChange={(event) => onUpdate(index, { label: event.target.value })}
+          className="h-9 w-full rounded-lg border border-gray-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/15"
+        />
+      </label>
+      <label className="space-y-1">
+        <span className="text-xs font-medium text-gray-500">시작 시간</span>
+        <select
+          value={part.startTime}
+          onChange={(event) => onUpdate(index, { startTime: event.target.value })}
+          className="h-9 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/15"
+        >
+          {timeOptions.map((time) => (
+            <option key={time} value={time}>{time}</option>
+          ))}
+        </select>
+      </label>
+      <div className="space-y-1">
+        <span className="text-xs font-medium text-gray-500">종료 시간</span>
+        <div className="flex h-9 items-center rounded-lg border border-gray-200 bg-gray-50 px-3 text-sm text-gray-700">
+          {part.endTime}
+        </div>
+      </div>
+      <Button
+        onClick={() => onRemove(index)}
+        disabled={partCount <= 1}
+        variant="ghost"
+        size="icon-sm"
+        aria-label={`${part.label} 삭제`}
+        title="삭제"
+        className="text-red-600 hover:text-red-700 md:self-end"
+      >
+        <Trash2 aria-hidden />
+      </Button>
+    </div>
+  );
 }
 
 export default function ShiftPartsPage() {
@@ -37,6 +176,10 @@ export default function ShiftPartsPage() {
   const [error, setError] = useState<string | null>(null);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
   const timeOptions = useMemo(() => buildTimeOptions(), []);
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
 
   async function load() {
     const response = await fetch("/api/shift-parts");
@@ -90,12 +233,30 @@ export default function ShiftPartsPage() {
     setParts((current) => normalizeRows([
       ...current,
       {
+        clientId: createClientId(),
         label: `파트 ${current.length + 1}`,
         startTime: "09:00",
         endTime: "18:00",
         sortOrder: current.length,
       },
     ]));
+    setSavedMessage(null);
+    setError(null);
+  }
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+
+    if (!over || active.id === over.id) return;
+
+    setParts((current) => {
+      const oldIndex = current.findIndex((part) => part.clientId === active.id);
+      const newIndex = current.findIndex((part) => part.clientId === over.id);
+
+      if (oldIndex === -1 || newIndex === -1) return current;
+
+      return normalizeRows(arrayMove(current, oldIndex, newIndex));
+    });
     setSavedMessage(null);
     setError(null);
   }
@@ -107,6 +268,20 @@ export default function ShiftPartsPage() {
     }
 
     setParts((current) => normalizeRows(current.filter((_, partIndex) => partIndex !== index)));
+    setSavedMessage(null);
+    setError(null);
+  }
+
+  function movePart(index: number, direction: -1 | 1) {
+    const nextIndex = index + direction;
+
+    if (nextIndex < 0 || nextIndex >= parts.length) return;
+
+    setParts((current) => {
+      const next = [...current];
+      [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
+      return normalizeRows(next);
+    });
     setSavedMessage(null);
     setError(null);
   }
@@ -160,6 +335,7 @@ export default function ShiftPartsPage() {
             <p>종료 시간은 시작 시간에서 9시간 뒤로 자동 계산됩니다.</p>
             <p>시작 시간은 00분 또는 30분 단위만 선택할 수 있습니다.</p>
             <p>저장한 파트는 새 근무표 생성과 달력 표시 순서에 반영됩니다.</p>
+            <p>드래그하거나 위/아래 버튼으로 표시 순서와 생성 배정 순서를 조정할 수 있습니다.</p>
           </div>
         </CardContent>
       </Card>
@@ -178,52 +354,24 @@ export default function ShiftPartsPage() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3">
-              {parts.map((part, index) => (
-                <div
-                  key={`${part.code ?? "new"}-${index}`}
-                  className="grid gap-3 rounded-lg border border-gray-200 bg-white p-3 md:grid-cols-[1fr_160px_160px_40px] md:items-end"
-                >
-                  <label className="space-y-1">
-                    <span className="text-xs font-medium text-gray-500">파트 이름</span>
-                    <input
-                      value={part.label}
-                      onChange={(event) => updatePart(index, { label: event.target.value })}
-                      className="h-9 w-full rounded-lg border border-gray-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/15"
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+              <SortableContext items={parts.map((part) => part.clientId)} strategy={verticalListSortingStrategy}>
+                <div className="space-y-3">
+                  {parts.map((part, index) => (
+                    <SortablePartRow
+                      key={part.clientId}
+                      part={part}
+                      index={index}
+                      partCount={parts.length}
+                      timeOptions={timeOptions}
+                      onMove={movePart}
+                      onRemove={removePart}
+                      onUpdate={updatePart}
                     />
-                  </label>
-                  <label className="space-y-1">
-                    <span className="text-xs font-medium text-gray-500">시작 시간</span>
-                    <select
-                      value={part.startTime}
-                      onChange={(event) => updatePart(index, { startTime: event.target.value })}
-                      className="h-9 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/15"
-                    >
-                      {timeOptions.map((time) => (
-                        <option key={time} value={time}>{time}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <div className="space-y-1">
-                    <span className="text-xs font-medium text-gray-500">종료 시간</span>
-                    <div className="flex h-9 items-center rounded-lg border border-gray-200 bg-gray-50 px-3 text-sm text-gray-700">
-                      {part.endTime}
-                    </div>
-                  </div>
-                  <Button
-                    onClick={() => removePart(index)}
-                    disabled={parts.length <= 1}
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label={`${part.label} 삭제`}
-                    title="삭제"
-                    className="text-red-600 hover:text-red-700"
-                  >
-                    <Trash2 aria-hidden />
-                  </Button>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </SortableContext>
+            </DndContext>
             {error ? <p className="mt-3 text-sm text-red-600">{error}</p> : null}
             {savedMessage ? <p className="mt-3 text-sm text-green-700">{savedMessage}</p> : null}
           </CardContent>
