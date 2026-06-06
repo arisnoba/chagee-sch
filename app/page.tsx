@@ -37,32 +37,81 @@ export default function DashboardPage() {
   const [scores, setScores] = useState<EmployeeWithScore[]>([]);
   const [loading, setLoading] = useState(true);
   const [seeding, setSeeding] = useState(false);
+  const [error, setError] = useState("");
 
   async function loadScores() {
     setLoading(true);
-    const res = await fetch("/api/fairness");
-    if (res.ok) setScores(await res.json());
-    setLoading(false);
+    setError("");
+
+    try {
+      const res = await fetch("/api/fairness");
+      const body = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        setScores([]);
+        setError(body?.error ?? "공평 지표를 불러오지 못했습니다.");
+        return;
+      }
+
+      setScores(body);
+    } catch {
+      setScores([]);
+      setError("공평 지표 요청에 실패했습니다.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function handleSetup() {
     setSeeding(true);
-    await fetch("/api/migrate", { method: "POST" });
-    await fetch("/api/seed", { method: "POST" });
-    await loadScores();
-    setSeeding(false);
+    setError("");
+
+    try {
+      const migrateRes = await fetch("/api/migrate", { method: "POST" });
+      if (!migrateRes.ok) throw new Error("초기 테이블 설정에 실패했습니다.");
+
+      const seedRes = await fetch("/api/seed", { method: "POST" });
+      if (!seedRes.ok) throw new Error("목업 데이터 초기화에 실패했습니다.");
+
+      await loadScores();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "목업 데이터 초기화에 실패했습니다.");
+    } finally {
+      setSeeding(false);
+    }
   }
 
   useEffect(() => {
     let ignore = false;
 
-    fetch("/api/fairness")
-      .then((res) => res.ok ? res.json() : [])
-      .then((data) => {
+    async function load() {
+      setLoading(true);
+      setError("");
+
+      try {
+        const res = await fetch("/api/fairness");
+        const body = await res.json().catch(() => null);
         if (ignore) return;
-        setScores(data);
+
+        if (!res.ok) {
+          setScores([]);
+          setError(body?.error ?? "공평 지표를 불러오지 못했습니다.");
+          return;
+        }
+
+        setScores(body);
+      } catch {
+        if (!ignore) {
+          setScores([]);
+          setError("공평 지표 요청에 실패했습니다.");
+        }
+      } finally {
+        if (ignore) return;
         setLoading(false);
-      });
+      }
+    }
+
+    void load();
 
     return () => { ignore = true; };
   }, []);
@@ -99,6 +148,13 @@ export default function DashboardPage() {
 
       {loading ? (
         <div className="text-center py-20 text-gray-400">불러오는 중...</div>
+      ) : error ? (
+        <Card>
+          <CardContent className="py-16 text-center space-y-4">
+            <p className="text-red-500">{error}</p>
+            <Button onClick={loadScores} variant="outline">다시 불러오기</Button>
+          </CardContent>
+        </Card>
       ) : scores.length === 0 ? (
         <Card>
           <CardContent className="py-16 text-center space-y-4">

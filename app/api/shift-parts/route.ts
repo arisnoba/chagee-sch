@@ -90,8 +90,10 @@ export async function PUT(req: Request) {
     return NextResponse.json({ error: normalized.error }, { status: 400 });
   }
 
-  await db.delete(shiftParts);
-  await db.insert(shiftParts).values(normalized.values);
+  await db.transaction(async (tx) => {
+    await tx.delete(shiftParts);
+    await tx.insert(shiftParts).values(normalized.values);
+  });
 
   return NextResponse.json(sortShiftParts(normalized.values));
 }

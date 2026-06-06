@@ -5,6 +5,16 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { ScheduleCalendar, type CalendarDay } from "@/components/schedule-calendar";
 import type { DaySchedule } from "@/lib/scheduler/generate";
 import type { ShiftType } from "@/lib/scheduler/fairness";
@@ -212,7 +222,9 @@ export default function GeneratePage() {
   const [weekLabel, setWeekLabel] = useState("");
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [generateError, setGenerateError] = useState("");
   const [saveError, setSaveError] = useState("");
+  const [replaceDialogOpen, setReplaceDialogOpen] = useState(false);
   const [selectedEditDate, setSelectedEditDate] = useState("");
   const [selectedShift, setSelectedShift] = useState<ShiftType>("off");
   const consecutiveOffNames = useMemo(() => preview ? getConsecutiveOffNames(preview) : [], [preview]);
@@ -224,37 +236,62 @@ export default function GeneratePage() {
 
   async function handleGenerate() {
     setGenerating(true);
+    setGenerateError("");
+    setSaveError("");
     const sunday = new Date(selectedDate);
     const label = getWeekLabel(sunday);
     setWeekLabel(label);
 
-    const res = await fetch("/api/schedule/generate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ weekLabel: label, startDate: selectedDate }),
-    });
+    try {
+      const res = await fetch("/api/schedule/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ weekLabel: label, startDate: selectedDate }),
+      });
 
-    if (res.ok) {
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        setPreview(null);
+        setSelectedEditDate("");
+        setGenerateError(data?.error ?? "스케줄 생성에 실패했습니다.");
+        return;
+      }
+
       setShiftParts(data.shiftParts ?? DEFAULT_SHIFT_PARTS);
       setPreview(data.days);
       setSelectedEditDate(data.days[0]?.date ?? "");
+      if (data.warning === "SCHEDULE_CONFIRMED") {
+        setSaveError("이미 확정된 같은 주차 근무표가 있습니다. 확정 시 교체 여부를 확인합니다.");
+      }
+    } catch {
+      setPreview(null);
+      setSelectedEditDate("");
+      setGenerateError("스케줄 생성 요청에 실패했습니다.");
+    } finally {
+      setGenerating(false);
     }
-    setGenerating(false);
   }
 
-  async function handleConfirm() {
+  async function saveAndConfirm(options: { replaceConfirmed?: boolean } = {}) {
     if (!preview) return;
     setSaving(true);
     setSaveError("");
     const saveRes = await fetch(`/api/schedule/${weekLabel}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ days: preview }),
+      body: JSON.stringify({ days: preview, replaceConfirmed: options.replaceConfirmed === true }),
     });
 
     if (!saveRes.ok) {
-      setSaveError("수정한 휴무를 저장하지 못했습니다.");
+      const body = await saveRes.json().catch(() => null);
+      if (saveRes.status === 409 && body?.code === "SCHEDULE_CONFIRMED" && !options.replaceConfirmed) {
+        setSaving(false);
+        setReplaceDialogOpen(true);
+        return;
+      }
+
+      setSaveError(body?.error ?? "수정한 휴무를 저장하지 못했습니다.");
       setSaving(false);
       return;
     }
@@ -267,6 +304,15 @@ export default function GeneratePage() {
     }
 
     router.push(`/schedule/${weekLabel}`);
+  }
+
+  async function handleConfirm() {
+    await saveAndConfirm();
+  }
+
+  async function handleReplaceConfirmedSchedule() {
+    setReplaceDialogOpen(false);
+    await saveAndConfirm({ replaceConfirmed: true });
   }
 
   function handleToggleShift(employee: ScheduleEmployee, checked: boolean) {
@@ -309,7 +355,7 @@ export default function GeneratePage() {
             <input
               type="date"
               value={selectedDate}
-              onChange={(e) => { setSelectedDate(e.target.value); setPreview(null); setSelectedEditDate(""); }}
+              onChange={(e) => { setSelectedDate(e.target.value); setPreview(null); setSelectedEditDate(""); setGenerateError(""); setSaveError(""); }}
               className="block border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
@@ -319,6 +365,7 @@ export default function GeneratePage() {
           <Link href={`/schedule/month?month=${selectedDate.slice(0, 7)}`}>
             <Button variant="outline">월간 근무표</Button>
           </Link>
+          {generateError ? <p className="text-sm text-red-500">{generateError}</p> : null}
         </CardContent>
       </Card>
 
@@ -448,6 +495,22 @@ export default function GeneratePage() {
           </Card>
           )}
 
+          <AlertDialog open={replaceDialogOpen} onOpenChange={setReplaceDialogOpen}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>같은 주차 근무표를 교체할까요?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  이미 확정된 {weekLabel} 근무표가 있습니다. 새로 생성한 근무표로 기존 내용을 교체하고 다시 확정합니다.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>취소</AlertDialogCancel>
+                <AlertDialogAction onClick={handleReplaceConfirmedSchedule}>
+                  교체하기
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </>
       )}
     </div>
