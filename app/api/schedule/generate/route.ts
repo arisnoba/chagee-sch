@@ -7,7 +7,8 @@ import { getKoreaHolidaysForDatesWithStatus, holidayNameMap } from "@/lib/calend
 import { addLocalDays, formatLocalDate, isValidDateString, parseLocalDate } from "@/lib/calendar/date";
 import { generateWeekSchedule, type HolidayInput } from "@/lib/scheduler/generate";
 import { getActiveShiftParts } from "@/lib/db/shiftParts";
-import { and, eq, lt } from "drizzle-orm";
+import { and, eq, gte, lt } from "drizzle-orm";
+import { getFairnessHistoryStartDate } from "@/lib/scheduler/history";
 
 function buildWeekDates(startDate: string): string[] {
   const weekStart = parseLocalDate(startDate);
@@ -35,10 +36,15 @@ export async function POST(req: Request) {
 
     const allEmployees = await db.select().from(employees).where(eq(employees.isActive, true));
     const existingSchedule = await db.select().from(schedules).where(eq(schedules.weekLabel, weekLabel));
+    const historyStartDate = getFairnessHistoryStartDate(startDate);
     const pastLogs = await db
       .select()
       .from(shiftLogs)
-      .where(and(eq(shiftLogs.isConfirmed, true), lt(shiftLogs.date, startDate)));
+      .where(and(
+        eq(shiftLogs.isConfirmed, true),
+        gte(shiftLogs.date, historyStartDate),
+        lt(shiftLogs.date, startDate)
+      ));
 
     const weekDates = buildWeekDates(startDate);
     const { holidays: koreaHolidays, loaded: holidaysLoaded } = await getKoreaHolidaysForDatesWithStatus(weekDates);

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { Employee, ShiftLog } from "@/lib/db/schema";
 import { DEFAULT_SHIFT_PARTS, type WorkShiftPart } from "@/lib/shift-parts";
-import { calcFairnessScore, partBurden, rankByFairness } from "./fairness";
+import { calcBurden, calcFairnessScore, partBurden, rankByFairness } from "./fairness";
+import { getFairnessHistoryStartDate } from "./history";
 
 function employee(id: number, name = `직원${id}`): Employee {
   return {
@@ -59,6 +60,17 @@ describe("calcFairnessScore", () => {
     expect(score).toBe(1);
   });
 
+  it("근무 부담에 요일 계수를 적용한다", () => {
+    const emp = employee(1);
+
+    expect(calcBurden(emp, "middle", DEFAULT_SHIFT_PARTS, "weekend")).toBe(
+      calcBurden(emp, "middle", DEFAULT_SHIFT_PARTS, "weekday") * 1.5
+    );
+    expect(calcBurden(emp, "middle", DEFAULT_SHIFT_PARTS, "holiday")).toBe(
+      calcBurden(emp, "middle", DEFAULT_SHIFT_PARTS, "weekday") * 2
+    );
+  });
+
   it("커스텀 파트 부담이 근무일 수로 평탄화되지 않는다", () => {
     const parts: WorkShiftPart[] = [
       { code: "part-1", label: "오전", startTime: "09:00", endTime: "18:00", sortOrder: 0 },
@@ -84,5 +96,11 @@ describe("calcFairnessScore", () => {
     expect(calcFairnessScore(disliked, [log(2, "part-1")], parts)).toBeGreaterThan(
       calcFairnessScore(preferred, [log(1, "part-1")], parts)
     );
+  });
+});
+
+describe("getFairnessHistoryStartDate", () => {
+  it("기준일에서 기본 8주 전 날짜를 계산한다", () => {
+    expect(getFairnessHistoryStartDate("2026-06-07")).toBe("2026-04-12");
   });
 });

@@ -11,6 +11,12 @@ const DAY_REWARD: Record<DayType, number> = {
   holiday: 3,
 };
 
+const WORK_DAY_MULTIPLIER: Record<DayType, number> = {
+  weekday: 1,
+  weekend: 1.5,
+  holiday: 2,
+};
+
 const PREFERENCE_MULTIPLIER: Record<Preference, number> = {
   like: 0.5,
   neutral: 1.0,
@@ -59,12 +65,13 @@ function getBaseBurden(shiftType: ShiftType, shiftParts: WorkShiftPart[]): numbe
 export function calcBurden(
   employee: Employee,
   shiftType: ShiftType,
-  shiftParts: WorkShiftPart[] = DEFAULT_WORK_SHIFT_PARTS
+  shiftParts: WorkShiftPart[] = DEFAULT_WORK_SHIFT_PARTS,
+  dayType: DayType = "weekday"
 ): number {
   if (shiftType === "off") return 0;
   const base = getBaseBurden(shiftType, shiftParts);
   const multiplier = PREFERENCE_MULTIPLIER[getPartPreference(employee, shiftType)];
-  return base * multiplier;
+  return base * multiplier * WORK_DAY_MULTIPLIER[dayType];
 }
 
 export function calcFairnessScore(
@@ -80,7 +87,7 @@ export function calcFairnessScore(
     if (log.shiftType === "off") {
       reward += DAY_REWARD[log.dayType as DayType];
     } else {
-      burden += calcBurden(employee, log.shiftType as ShiftType, shiftParts);
+      burden += calcBurden(employee, log.shiftType as ShiftType, shiftParts, log.dayType as DayType);
     }
   }
 

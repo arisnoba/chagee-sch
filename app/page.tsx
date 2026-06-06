@@ -9,6 +9,7 @@ import { BarChart, Bar, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer } from 
 import type { EmployeeWithScore } from "@/lib/scheduler/fairness";
 import { getPartPreference } from "@/lib/employee-preferences";
 import type { WorkShiftPart } from "@/lib/shift-parts";
+import { FAIRNESS_HISTORY_WEEKS } from "@/lib/scheduler/history";
 
 const PREF_COLORS = { like: "text-green-600 bg-green-50", neutral: "text-gray-500 bg-gray-100", dislike: "text-red-500 bg-red-50" };
 const PREF_ICONS = { like: "👍", neutral: "😐", dislike: "👎" };
@@ -150,7 +151,7 @@ export default function DashboardPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">대시보드</h1>
-          <p className="text-sm text-gray-500 mt-1">직원별 공평 지표를 확인하고 근무표를 생성하세요</p>
+          <p className="text-sm text-gray-500 mt-1">최근 {FAIRNESS_HISTORY_WEEKS}주 공평 지표를 확인하고 근무표를 생성하세요</p>
         </div>
         <div className="flex gap-3">
           <Button variant="outline" onClick={handleSetup} disabled={seeding}>
