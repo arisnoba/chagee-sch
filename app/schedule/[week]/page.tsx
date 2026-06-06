@@ -294,10 +294,10 @@ export default function WeekPage() {
       .filter((employee) => summaryRows.some((row) => row.employee.id === employee.id))
       .map((employee) => ({
         employee,
-        score: calcFairnessScore(employee, logs),
+        score: calcFairnessScore(employee, logs, shiftParts),
       }))
       .sort((a, b) => b.score - a.score);
-  }, [data, draftDays, summaryRows, week]);
+  }, [data, draftDays, shiftParts, summaryRows, week]);
 
   useEffect(() => {
     let ignore = false;

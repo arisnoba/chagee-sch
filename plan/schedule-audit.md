@@ -501,9 +501,9 @@ if (!res.ok) {
 
 ### F0 — 테스트 하네스 도입
 
-- [ ] `vitest` 도입 및 `npm test` 스크립트 추가
-- [ ] `lib/scheduler/fairness.test.ts` 추가
-- [ ] 현재 기본 파트 기대값과 커스텀 파트 회귀 케이스를 테스트로 고정
+- [x] `vitest` 도입 및 `npm test` 스크립트 추가
+- [x] `lib/scheduler/fairness.test.ts` 추가
+- [x] 현재 기본 파트 기대값과 커스텀 파트 회귀 케이스를 테스트로 고정
 
 **성공 조건**
 - 기본 파트 부담은 `close > open > middle > 0`
@@ -512,11 +512,11 @@ if (!res.ok) {
 
 ### F1 — 시간 기반 파트 부담 계산
 
-- [ ] `partBurden(part)` 추가
-- [ ] `startTime`/`endTime`을 분 단위로 파싱하고 자정 넘김을 처리
-- [ ] 기본식 적용: `BASE=1.0`, `EARLY_W=0.5`, `LATE_W=0.5`
-- [ ] `calcBurden`/`calcFairnessScore`/`rankByFairness`가 `shiftParts`를 받을 수 있게 확장
-- [ ] 호출처 전파: `app/api/fairness/route.ts`, `app/schedule/[week]/page.tsx`, `lib/scheduler/generate.ts`
+- [x] `partBurden(part)` 추가
+- [x] `startTime`/`endTime`을 분 단위로 파싱하고 자정 넘김을 처리
+- [x] 기본식 적용: `BASE=1.0`, `EARLY_W=0.5`, `LATE_W=0.5`
+- [x] `calcBurden`/`calcFairnessScore`/`rankByFairness`가 `shiftParts`를 받을 수 있게 확장
+- [x] 호출처 전파: `app/api/fairness/route.ts`, `app/schedule/[week]/page.tsx`, `lib/scheduler/generate.ts`
 
 **초기 모델**
 ```text

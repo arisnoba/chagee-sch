@@ -207,6 +207,7 @@ function assignOffDays(
   employees: Employee[],
   weekDays: WeekDay[],
   logs: ShiftLog[],
+  shiftParts: WorkShiftPart[],
   seed: string
 ): Record<number, string[]> {
   const maxOffPerDay = getMaxOffPerDay(employees.length, weekDays.length);
@@ -220,7 +221,7 @@ function assignOffDays(
     result[e.id] = [];
   });
 
-  const ranked = rankByFairness(employees, logs, `${seed}:off`);
+  const ranked = rankByFairness(employees, logs, { shiftParts, tieSeed: `${seed}:off` });
 
   for (let round = 0; round < OFF_DAYS_PER_EMPLOYEE; round++) {
     for (const emp of ranked) {
@@ -276,7 +277,7 @@ export function generateWeekSchedule(
 
   // 1단계: 직원별 최대 이틀 휴무 배정 (공평 점수 높은 순으로 좋은 날 우선)
   const weekSeed = weekDays[0]?.date ?? formatLocalDate(weekStart);
-  const offDayMap = assignOffDays(employees, weekDays, workingLogs, weekSeed);
+  const offDayMap = assignOffDays(employees, weekDays, workingLogs, shiftParts, weekSeed);
 
   // 휴무 로그를 workingLogs에 반영 (이후 점수 계산에 사용)
   for (const emp of employees) {
@@ -305,10 +306,14 @@ export function generateWeekSchedule(
     const workingEmps = employees.filter((e) => !offIds.has(e.id));
     const offEmps = rankByFairness(
       employees.filter((e) => offIds.has(e.id)),
-      workingLogs
+      workingLogs,
+      { shiftParts }
     );
 
-    const ranked = rankByFairness(workingEmps, workingLogs, `${weekSeed}:${day.date}:work`);
+    const ranked = rankByFairness(workingEmps, workingLogs, {
+      shiftParts,
+      tieSeed: `${weekSeed}:${day.date}:work`,
+    });
     const previousDateString = formatLocalDate(addLocalDays(parseLocalDate(day.date), -1));
     const lastShiftCode = shiftParts[shiftParts.length - 1]?.code;
     const previousLastShiftIds = new Set(

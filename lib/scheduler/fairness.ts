@@ -1,4 +1,5 @@
 import type { Employee, ShiftLog } from "@/lib/db/schema";
+import { DEFAULT_SHIFT_PARTS, type WorkShiftPart } from "@/lib/shift-parts";
 
 export type ShiftType = string;
 export type DayType = "weekday" | "weekend" | "holiday";
@@ -15,6 +16,18 @@ const PREFERENCE_MULTIPLIER: Record<Preference, number> = {
   neutral: 1.0,
   dislike: 1.5,
 };
+const BASE_BURDEN = 1.0;
+const EARLY_START_MINUTES = 10 * 60;
+const LATE_END_MINUTES = 21 * 60;
+const EARLY_WEIGHT = 0.5;
+const LATE_WEIGHT = 0.5;
+const DEFAULT_WORK_SHIFT_PARTS = DEFAULT_SHIFT_PARTS.map(({ code, label, startTime, endTime, sortOrder }) => ({
+  code,
+  label,
+  startTime,
+  endTime,
+  sortOrder,
+}));
 
 function getPreference(employee: Employee, shiftType: ShiftType): Preference {
   if (shiftType === "open") return employee.openPreference as Preference;
@@ -23,21 +36,49 @@ function getPreference(employee: Employee, shiftType: ShiftType): Preference {
   return "neutral";
 }
 
-function getBaseBurden(shiftType: ShiftType): number {
-  if (shiftType === "off") return 0;
-  if (shiftType === "middle") return 0;
-  if (shiftType === "close") return 2;
-  return 1;
+function parseTimeMinutes(value: string): number | null {
+  const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(value);
+  if (!match) return null;
+
+  return Number(match[1]) * 60 + Number(match[2]);
 }
 
-export function calcBurden(employee: Employee, shiftType: ShiftType): number {
+export function partBurden(part: Pick<WorkShiftPart, "startTime" | "endTime"> | null | undefined): number {
+  if (!part) return BASE_BURDEN;
+
+  const startMinutes = parseTimeMinutes(part.startTime);
+  let endMinutes = parseTimeMinutes(part.endTime);
+
+  if (startMinutes === null || endMinutes === null) return BASE_BURDEN;
+  if (endMinutes <= startMinutes) endMinutes += 24 * 60;
+
+  const earliness = Math.max(0, EARLY_START_MINUTES - startMinutes) / 60;
+  const lateness = Math.max(0, endMinutes - LATE_END_MINUTES) / 60;
+
+  return BASE_BURDEN + EARLY_WEIGHT * earliness + LATE_WEIGHT * lateness;
+}
+
+function getBaseBurden(shiftType: ShiftType, shiftParts: WorkShiftPart[]): number {
   if (shiftType === "off") return 0;
-  const base = getBaseBurden(shiftType);
+  return partBurden(shiftParts.find((part) => part.code === shiftType));
+}
+
+export function calcBurden(
+  employee: Employee,
+  shiftType: ShiftType,
+  shiftParts: WorkShiftPart[] = DEFAULT_WORK_SHIFT_PARTS
+): number {
+  if (shiftType === "off") return 0;
+  const base = getBaseBurden(shiftType, shiftParts);
   const multiplier = PREFERENCE_MULTIPLIER[getPreference(employee, shiftType)];
   return base * multiplier;
 }
 
-export function calcFairnessScore(employee: Employee, logs: ShiftLog[]): number {
+export function calcFairnessScore(
+  employee: Employee,
+  logs: ShiftLog[],
+  shiftParts: WorkShiftPart[] = DEFAULT_WORK_SHIFT_PARTS
+): number {
   const empLogs = logs.filter((l) => l.employeeId === employee.id);
   let burden = 0;
   let reward = 0;
@@ -46,7 +87,7 @@ export function calcFairnessScore(employee: Employee, logs: ShiftLog[]): number 
     if (log.shiftType === "off") {
       reward += DAY_REWARD[log.dayType as DayType];
     } else {
-      burden += calcBurden(employee, log.shiftType as ShiftType);
+      burden += calcBurden(employee, log.shiftType as ShiftType, shiftParts);
     }
   }
 
@@ -54,6 +95,10 @@ export function calcFairnessScore(employee: Employee, logs: ShiftLog[]): number 
 }
 
 export type EmployeeWithScore = Employee & { fairnessScore: number };
+type RankOptions = {
+  shiftParts?: WorkShiftPart[];
+  tieSeed?: string;
+};
 
 function hashSeed(value: string): number {
   let hash = 2166136261;
@@ -87,10 +132,13 @@ function shuffleTieGroup<T extends { id: number }>(items: T[], seed: string): T[
 export function rankByFairness(
   employees: Employee[],
   logs: ShiftLog[],
-  tieSeed?: string
+  options?: string | RankOptions
 ): EmployeeWithScore[] {
+  const rankOptions = typeof options === "string" ? { tieSeed: options } : options;
+  const shiftParts = rankOptions?.shiftParts ?? DEFAULT_WORK_SHIFT_PARTS;
+  const tieSeed = rankOptions?.tieSeed;
   const ranked = employees
-    .map((e) => ({ ...e, fairnessScore: calcFairnessScore(e, logs) }))
+    .map((e) => ({ ...e, fairnessScore: calcFairnessScore(e, logs, shiftParts) }))
     .sort((a, b) => b.fairnessScore - a.fairnessScore);
 
   if (!tieSeed) return ranked;
