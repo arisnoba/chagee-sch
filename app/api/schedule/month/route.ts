@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { apiError, apiInternalError } from "@/lib/api/response";
 import { and, gte, inArray, lte } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { employees, schedules, shiftLogs } from "@/lib/db/schema";
@@ -20,43 +21,47 @@ function getMonthDates(month: string): string[] {
 }
 
 export async function GET(req: Request) {
-  const url = new URL(req.url);
-  const month = url.searchParams.get("month");
+  try {
+    const url = new URL(req.url);
+    const month = url.searchParams.get("month");
 
-  if (!isValidMonth(month)) {
-    return NextResponse.json({ error: "Invalid month. Use YYYY-MM." }, { status: 400 });
-  }
+    if (!isValidMonth(month)) {
+      return apiError("월 형식이 올바르지 않습니다. YYYY-MM 형식을 사용하세요.", 400, "INVALID_MONTH");
+    }
 
-  const dates = getMonthDates(month);
-  const startDate = dates[0];
-  const endDate = dates[dates.length - 1];
+    const dates = getMonthDates(month);
+    const startDate = dates[0];
+    const endDate = dates[dates.length - 1];
 
-  const savedSchedules = await db
-    .select()
-    .from(schedules)
-    .where(lte(schedules.startDate, endDate));
-  const scheduleWeekLabels = savedSchedules.map((schedule) => schedule.weekLabel);
-  const logs = scheduleWeekLabels.length > 0
-    ? await db
+    const savedSchedules = await db
       .select()
-      .from(shiftLogs)
-      .where(and(
-        gte(shiftLogs.date, startDate),
-        lte(shiftLogs.date, endDate),
-        inArray(shiftLogs.weekLabel, scheduleWeekLabels)
-      ))
-    : [];
-  const emps = await db.select().from(employees);
-  const holidays = await getKoreaHolidaysForDates(dates);
-  const shiftParts = await getActiveShiftParts();
+      .from(schedules)
+      .where(lte(schedules.startDate, endDate));
+    const scheduleWeekLabels = savedSchedules.map((schedule) => schedule.weekLabel);
+    const logs = scheduleWeekLabels.length > 0
+      ? await db
+        .select()
+        .from(shiftLogs)
+        .where(and(
+          gte(shiftLogs.date, startDate),
+          lte(shiftLogs.date, endDate),
+          inArray(shiftLogs.weekLabel, scheduleWeekLabels)
+        ))
+      : [];
+    const emps = await db.select().from(employees);
+    const holidays = await getKoreaHolidaysForDates(dates);
+    const shiftParts = await getActiveShiftParts();
 
-  return NextResponse.json({
-    month,
-    dates,
-    logs,
-    schedules: savedSchedules,
-    employees: emps,
-    holidays: holidayNameMap(holidays),
-    shiftParts,
-  });
+    return NextResponse.json({
+      month,
+      dates,
+      logs,
+      schedules: savedSchedules,
+      employees: emps,
+      holidays: holidayNameMap(holidays),
+      shiftParts,
+    });
+  } catch (error) {
+    return apiInternalError(error, "월간 근무표를 불러오지 못했습니다.");
+  }
 }

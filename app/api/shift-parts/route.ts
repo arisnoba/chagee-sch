@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { apiError, apiInternalError } from "@/lib/api/response";
 import { db } from "@/lib/db/client";
 import { migrate } from "@/lib/db/migrate";
 import { shiftParts } from "@/lib/db/schema";
@@ -76,24 +77,32 @@ function normalizeShiftParts(inputs: ShiftPartInput[]): { values: NormalizedShif
 }
 
 export async function GET() {
-  const rows = await getActiveShiftParts();
-  return NextResponse.json(rows);
+  try {
+    const rows = await getActiveShiftParts();
+    return NextResponse.json(rows);
+  } catch (error) {
+    return apiInternalError(error, "파트 목록을 불러오지 못했습니다.");
+  }
 }
 
 export async function PUT(req: Request) {
-  await migrate();
-  const body = await req.json();
-  const inputs = Array.isArray(body.parts) ? body.parts : [];
-  const normalized = normalizeShiftParts(inputs);
+  try {
+    await migrate();
+    const body = await req.json();
+    const inputs = Array.isArray(body.parts) ? body.parts : [];
+    const normalized = normalizeShiftParts(inputs);
 
-  if ("error" in normalized) {
-    return NextResponse.json({ error: normalized.error }, { status: 400 });
+    if ("error" in normalized) {
+      return apiError(normalized.error, 400, "INVALID_SHIFT_PARTS");
+    }
+
+    await db.transaction(async (tx) => {
+      await tx.delete(shiftParts);
+      await tx.insert(shiftParts).values(normalized.values);
+    });
+
+    return NextResponse.json(sortShiftParts(normalized.values));
+  } catch (error) {
+    return apiInternalError(error, "파트를 저장하지 못했습니다.");
   }
-
-  await db.transaction(async (tx) => {
-    await tx.delete(shiftParts);
-    await tx.insert(shiftParts).values(normalized.values);
-  });
-
-  return NextResponse.json(sortShiftParts(normalized.values));
 }

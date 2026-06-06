@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { apiError, apiInternalError } from "@/lib/api/response";
 import { db } from "@/lib/db/client";
 import { employees, schedules, shiftLogs } from "@/lib/db/schema";
 import { getKoreaHolidaysForDatesWithStatus, holidayNameMap } from "@/lib/calendar/koreaHolidays";
@@ -19,39 +20,43 @@ function isValidWeekLabel(value: unknown): value is string {
 }
 
 export async function POST(req: Request) {
-  const { weekLabel, startDate, holidays = [] } = await req.json();
+  try {
+    const { weekLabel, startDate, holidays = [] } = await req.json();
 
-  if (!isValidWeekLabel(weekLabel)) {
-    return NextResponse.json({ error: "Invalid week label" }, { status: 400 });
+    if (!isValidWeekLabel(weekLabel)) {
+      return apiError("주차 형식이 올바르지 않습니다.", 400, "INVALID_WEEK_LABEL");
+    }
+
+    if (!isValidDateString(startDate)) {
+      return apiError("시작 날짜가 올바르지 않습니다.", 400, "INVALID_START_DATE");
+    }
+
+    const allEmployees = await db.select().from(employees).where(eq(employees.isActive, true));
+    const existingSchedule = await db.select().from(schedules).where(eq(schedules.weekLabel, weekLabel));
+    const pastLogs = await db
+      .select()
+      .from(shiftLogs)
+      .where(and(eq(shiftLogs.isConfirmed, true), lt(shiftLogs.date, startDate)));
+
+    const weekDates = buildWeekDates(startDate);
+    const { holidays: koreaHolidays, loaded: holidaysLoaded } = await getKoreaHolidaysForDatesWithStatus(weekDates);
+    const holidayInputs: HolidayInput[] = Array.isArray(holidays) && holidays.length > 0
+      ? holidays
+      : koreaHolidays;
+    const shiftParts = await getActiveShiftParts();
+    const weekStart = parseLocalDate(startDate);
+    const daySchedules = generateWeekSchedule(weekStart, allEmployees, pastLogs, holidayInputs, shiftParts);
+    const warning = existingSchedule[0]?.status === "confirmed" ? "SCHEDULE_CONFIRMED" : undefined;
+
+    return NextResponse.json({
+      weekLabel,
+      days: daySchedules,
+      holidays: holidayNameMap(koreaHolidays),
+      holidaysLoaded,
+      shiftParts,
+      warning,
+    });
+  } catch (error) {
+    return apiInternalError(error, "스케줄 생성에 실패했습니다.");
   }
-
-  if (!isValidDateString(startDate)) {
-    return NextResponse.json({ error: "Invalid start date" }, { status: 400 });
-  }
-
-  const allEmployees = await db.select().from(employees).where(eq(employees.isActive, true));
-  const existingSchedule = await db.select().from(schedules).where(eq(schedules.weekLabel, weekLabel));
-  const pastLogs = await db
-    .select()
-    .from(shiftLogs)
-    .where(and(eq(shiftLogs.isConfirmed, true), lt(shiftLogs.date, startDate)));
-
-  const weekDates = buildWeekDates(startDate);
-  const { holidays: koreaHolidays, loaded: holidaysLoaded } = await getKoreaHolidaysForDatesWithStatus(weekDates);
-  const holidayInputs: HolidayInput[] = Array.isArray(holidays) && holidays.length > 0
-    ? holidays
-    : koreaHolidays;
-  const shiftParts = await getActiveShiftParts();
-  const weekStart = parseLocalDate(startDate);
-  const daySchedules = generateWeekSchedule(weekStart, allEmployees, pastLogs, holidayInputs, shiftParts);
-  const warning = existingSchedule[0]?.status === "confirmed" ? "SCHEDULE_CONFIRMED" : undefined;
-
-  return NextResponse.json({
-    weekLabel,
-    days: daySchedules,
-    holidays: holidayNameMap(koreaHolidays),
-    holidaysLoaded,
-    shiftParts,
-    warning,
-  });
 }

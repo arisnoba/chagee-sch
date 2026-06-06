@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { apiError } from "@/lib/api/response";
 
 export function requireMaintenanceAccess(req: Request): NextResponse | null {
   if (process.env.NODE_ENV === "development") return null;
@@ -8,5 +9,5 @@ export function requireMaintenanceAccess(req: Request): NextResponse | null {
 
   if (secret && providedSecret === secret) return null;
 
-  return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  return apiError("권한이 없습니다.", 403, "FORBIDDEN");
 }
