@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { apiError, apiInternalError } from "@/lib/api/response";
 import { db } from "@/lib/db/client";
+import { migrate } from "@/lib/db/migrate";
 import { employees, schedules, shiftLogs } from "@/lib/db/schema";
 import { getKoreaHolidaysForDatesWithStatus, holidayNameMap } from "@/lib/calendar/koreaHolidays";
 import { addLocalDays, formatLocalDate, isValidDateString, parseLocalDate } from "@/lib/calendar/date";
@@ -21,6 +22,7 @@ function isValidWeekLabel(value: unknown): value is string {
 
 export async function POST(req: Request) {
   try {
+    await migrate();
     const { weekLabel, startDate, holidays = [] } = await req.json();
 
     if (!isValidWeekLabel(weekLabel)) {

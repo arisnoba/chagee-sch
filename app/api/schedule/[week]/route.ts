@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { apiError, apiInternalError } from "@/lib/api/response";
 import { db } from "@/lib/db/client";
+import { migrate } from "@/lib/db/migrate";
 import { employees, shiftLogs, schedules } from "@/lib/db/schema";
 import { getKoreaHolidaysForDates, holidayNameMap } from "@/lib/calendar/koreaHolidays";
 import { getActiveShiftParts } from "@/lib/db/shiftParts";
@@ -73,6 +74,7 @@ function validateSchedulePayload(
 
 export async function GET(_req: Request, { params }: { params: Promise<{ week: string }> }) {
   try {
+    await migrate();
     const { week } = await params;
     const schedule = await db.select().from(schedules).where(eq(schedules.weekLabel, week));
     if (!schedule.length) return apiError("스케줄을 찾을 수 없습니다.", 404, "SCHEDULE_NOT_FOUND");
@@ -95,6 +97,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ week: s
 
 export async function PATCH(_req: Request, { params }: { params: Promise<{ week: string }> }) {
   try {
+    await migrate();
     const { week } = await params;
     const schedule = await db.select().from(schedules).where(eq(schedules.weekLabel, week));
 
@@ -118,6 +121,7 @@ export async function PATCH(_req: Request, { params }: { params: Promise<{ week:
 
 export async function PUT(req: Request, { params }: { params: Promise<{ week: string }> }) {
   try {
+    await migrate();
     const { week } = await params;
     const { days, replaceConfirmed = false } = await req.json();
     const schedule = await db.select().from(schedules).where(eq(schedules.weekLabel, week));

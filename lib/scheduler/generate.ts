@@ -2,6 +2,7 @@ import type { Employee, ShiftLog } from "@/lib/db/schema";
 import { rankByFairness, type EmployeeWithScore, type ShiftType, type DayType } from "./fairness";
 import { DEFAULT_SHIFT_PARTS, sortShiftParts, type WorkShiftPart } from "@/lib/shift-parts";
 import { addLocalDays, daysBetween, formatLocalDate, parseLocalDate } from "@/lib/calendar/date";
+import { getPartPreference, type Preference } from "@/lib/employee-preferences";
 
 export type DaySchedule = {
   date: string;
@@ -54,15 +55,12 @@ function buildWeekDays(weekStart: Date, holidays: HolidayInput[]): WeekDay[] {
   return days;
 }
 
-function prefScore(pref: string): number {
+function prefScore(pref: Preference): number {
   return pref === "like" ? 2 : pref === "neutral" ? 1 : 0;
 }
 
 function getShiftPreferenceScore(emp: Employee, shiftCode: string): number {
-  if (shiftCode === "open") return prefScore(emp.openPreference);
-  if (shiftCode === "middle") return prefScore(emp.middlePreference);
-  if (shiftCode === "close") return prefScore(emp.closePreference);
-  return prefScore("neutral");
+  return prefScore(getPartPreference(emp, shiftCode));
 }
 
 function getShiftPreferenceOrder(emp: Employee, shiftParts: WorkShiftPart[]): string[] {
@@ -73,11 +71,7 @@ function getShiftPreferenceOrder(emp: Employee, shiftParts: WorkShiftPart[]): st
 }
 
 function getPreferenceLabel(emp: Employee, shift: string): string {
-  const preference = shift === "open"
-    ? emp.openPreference
-    : shift === "middle"
-    ? emp.middlePreference
-    : emp.closePreference;
+  const preference = getPartPreference(emp, shift);
 
   if (preference === "like") return "선호 파트";
   if (preference === "dislike") return "기피 파트 보상 반영";

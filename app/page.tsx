@@ -7,6 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { BarChart, Bar, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import type { EmployeeWithScore } from "@/lib/scheduler/fairness";
+import { getPartPreference } from "@/lib/employee-preferences";
+import type { WorkShiftPart } from "@/lib/shift-parts";
 
 const PREF_COLORS = { like: "text-green-600 bg-green-50", neutral: "text-gray-500 bg-gray-100", dislike: "text-red-500 bg-red-50" };
 const PREF_ICONS = { like: "👍", neutral: "😐", dislike: "👎" };
@@ -35,6 +37,7 @@ function getTierStyle(tier: Tier) {
 
 export default function DashboardPage() {
   const [scores, setScores] = useState<EmployeeWithScore[]>([]);
+  const [shiftParts, setShiftParts] = useState<WorkShiftPart[]>([]);
   const [loading, setLoading] = useState(true);
   const [seeding, setSeeding] = useState(false);
   const [error, setError] = useState("");
@@ -44,13 +47,21 @@ export default function DashboardPage() {
     setError("");
 
     try {
-      const res = await fetch("/api/fairness");
-      const body = await res.json().catch(() => null);
+      const [scoreRes, partRes] = await Promise.all([
+        fetch("/api/fairness"),
+        fetch("/api/shift-parts"),
+      ]);
+      const body = await scoreRes.json().catch(() => null);
+      const partBody = await partRes.json().catch(() => null);
 
-      if (!res.ok) {
+      if (!scoreRes.ok) {
         setScores([]);
         setError(body?.error ?? "공평 지표를 불러오지 못했습니다.");
         return;
+      }
+
+      if (partRes.ok && Array.isArray(partBody)) {
+        setShiftParts(partBody);
       }
 
       setScores(body);
@@ -89,14 +100,22 @@ export default function DashboardPage() {
       setError("");
 
       try {
-        const res = await fetch("/api/fairness");
-        const body = await res.json().catch(() => null);
+        const [scoreRes, partRes] = await Promise.all([
+          fetch("/api/fairness"),
+          fetch("/api/shift-parts"),
+        ]);
+        const body = await scoreRes.json().catch(() => null);
+        const partBody = await partRes.json().catch(() => null);
         if (ignore) return;
 
-        if (!res.ok) {
+        if (!scoreRes.ok) {
           setScores([]);
           setError(body?.error ?? "공평 지표를 불러오지 못했습니다.");
           return;
+        }
+
+        if (partRes.ok && Array.isArray(partBody)) {
+          setShiftParts(partBody);
         }
 
         setScores(body);
@@ -237,9 +256,13 @@ export default function DashboardPage() {
                         <td className="px-4 py-3 font-medium">{emp.name}</td>
                         <td className="px-4 py-3">
                           <span className="flex gap-1 flex-wrap">
-                            <PreferenceBadge label="오픈" value={emp.openPreference} />
-                            <PreferenceBadge label="미들" value={emp.middlePreference} />
-                            <PreferenceBadge label="마감" value={emp.closePreference} />
+                            {shiftParts.map((part) => (
+                              <PreferenceBadge
+                                key={part.code}
+                                label={part.label}
+                                value={getPartPreference(emp, part.code)}
+                              />
+                            ))}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-right font-mono font-semibold">

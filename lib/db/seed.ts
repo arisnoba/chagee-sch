@@ -1,6 +1,8 @@
 import { db } from "./client";
+import { migrate } from "./migrate";
 import { DEFAULT_SHIFT_PARTS } from "@/lib/shift-parts";
 import { employees, shiftLogs, schedules, shiftParts } from "./schema";
+import { serializePartPreferences } from "@/lib/employee-preferences";
 
 const ALL_DAYS = JSON.stringify(["mon", "tue", "wed", "thu", "fri", "sat", "sun"]);
 
@@ -23,7 +25,14 @@ const MOCK_EMPLOYEES = [
   { name: "신동현", employmentType: "fulltime" as const, availableDays: ALL_DAYS, openPreference: "neutral" as const, middlePreference: "like" as const, closePreference: "neutral" as const },
   { name: "류채원", employmentType: "fulltime" as const, availableDays: ALL_DAYS, openPreference: "neutral" as const, middlePreference: "neutral" as const, closePreference: "like" as const },
   { name: "백승민", employmentType: "fulltime" as const, availableDays: ALL_DAYS, openPreference: "like" as const, middlePreference: "neutral" as const, closePreference: "neutral" as const },
-];
+].map((employee) => ({
+  ...employee,
+  partPreferences: serializePartPreferences({
+    open: employee.openPreference,
+    middle: employee.middlePreference,
+    close: employee.closePreference,
+  }),
+}));
 
 const SEED_HOLIDAYS = new Set(["2026-05-05", "2026-05-15"]);
 
@@ -150,6 +159,7 @@ function generatePastSchedulesAndLogs(insertedEmployees: typeof employees.$infer
 export async function seed() {
   console.log("Seeding database...");
 
+  await migrate();
   await db.delete(shiftLogs);
   await db.delete(schedules);
   await db.delete(shiftParts);

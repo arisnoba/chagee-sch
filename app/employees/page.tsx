@@ -13,6 +13,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { Employee } from "@/lib/db/schema";
+import { getPartPreference, PREFERENCE_OPTIONS, type PartPreferences, type Preference } from "@/lib/employee-preferences";
+import type { WorkShiftPart } from "@/lib/shift-parts";
 
 const PREF_LABELS: Record<string, string> = { like: "👍 선호", neutral: "😐 보통", dislike: "👎 기피" };
 const PREF_COLORS: Record<string, string> = {
@@ -20,47 +22,84 @@ const PREF_COLORS: Record<string, string> = {
   neutral: "text-gray-500 bg-gray-50 border-gray-200",
   dislike: "text-red-600 bg-red-50 border-red-200",
 };
-const PREF_OPTIONS = ["like", "neutral", "dislike"] as const;
 const PREF_OPTION_LABELS: Record<string, string> = { like: "👍 선호", neutral: "😐 보통", dislike: "👎 기피" };
 
-type Preference = (typeof PREF_OPTIONS)[number];
 type EmployeeForm = {
   name: string;
-  openPreference: Preference;
-  middlePreference: Preference;
-  closePreference: Preference;
+  partPreferences: PartPreferences;
 };
 
 function sortEmployeesByName(rows: Employee[]): Employee[] {
   return [...rows].sort((a, b) => a.name.localeCompare(b.name, "ko"));
 }
 
+function neutralPreferences(parts: WorkShiftPart[]): PartPreferences {
+  return Object.fromEntries(parts.map((part) => [part.code, "neutral" as Preference]));
+}
+
+function preferencesForEmployee(emp: Employee, parts: WorkShiftPart[]): PartPreferences {
+  return Object.fromEntries(parts.map((part) => [part.code, getPartPreference(emp, part.code)]));
+}
+
+function mergePartPreferences(parts: WorkShiftPart[], current: PartPreferences): PartPreferences {
+  return Object.fromEntries(parts.map((part) => [part.code, current[part.code] ?? "neutral"]));
+}
+
 export default function EmployeesPage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [shiftParts, setShiftParts] = useState<WorkShiftPart[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<EmployeeForm | null>(null);
   const [newName, setNewName] = useState("");
+  const [newPartPreferences, setNewPartPreferences] = useState<PartPreferences>({});
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function load() {
-    const data = await fetch("/api/employees").then((r) => r.json());
-    setEmployees(sortEmployeesByName(data));
-    setLoading(false);
+    try {
+      const [employeeRows, partRows] = await Promise.all([
+        fetch("/api/employees").then((r) => r.json()),
+        fetch("/api/shift-parts").then((r) => r.json()),
+      ]);
+
+      const parts = Array.isArray(partRows) ? partRows : [];
+      setShiftParts(parts);
+      setNewPartPreferences((prev) => mergePartPreferences(parts, prev));
+      setEmployees(sortEmployeesByName(Array.isArray(employeeRows) ? employeeRows : []));
+    } catch {
+      setError("직원 정보를 불러오지 못했습니다.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
     let ignore = false;
 
-    fetch("/api/employees")
-      .then((r) => r.json())
-      .then((data) => {
+    async function loadInitial() {
+      try {
+        const [employeeRows, partRows] = await Promise.all([
+          fetch("/api/employees").then((r) => r.json()),
+          fetch("/api/shift-parts").then((r) => r.json()),
+        ]);
+
         if (ignore) return;
-        setEmployees(sortEmployeesByName(data));
+
+        const parts = Array.isArray(partRows) ? partRows : [];
+        setShiftParts(parts);
+        setNewPartPreferences(neutralPreferences(parts));
+        setEmployees(sortEmployeesByName(Array.isArray(employeeRows) ? employeeRows : []));
+      } catch {
+        if (!ignore) setError("직원 정보를 불러오지 못했습니다.");
+      } finally {
+        if (ignore) return;
         setLoading(false);
-      });
+      }
+    }
+
+    void loadInitial();
 
     return () => { ignore = true; };
   }, []);
@@ -69,9 +108,7 @@ export default function EmployeesPage() {
     setEditingId(emp.id);
     setEditForm({
       name: emp.name,
-      openPreference: emp.openPreference,
-      middlePreference: emp.middlePreference,
-      closePreference: emp.closePreference,
+      partPreferences: preferencesForEmployee(emp, shiftParts),
     });
     setError(null);
   }
@@ -117,7 +154,7 @@ export default function EmployeesPage() {
     const response = await fetch("/api/employees", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, partPreferences: newPartPreferences }),
     });
 
     if (!response.ok) {
@@ -128,6 +165,7 @@ export default function EmployeesPage() {
     }
 
     setNewName("");
+    setNewPartPreferences(neutralPreferences(shiftParts));
     setSaving(false);
     await load();
   }
@@ -182,6 +220,29 @@ export default function EmployeesPage() {
               추가
             </Button>
           </div>
+          {shiftParts.length > 0 ? (
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {shiftParts.map((part) => (
+                <label key={part.code} className="flex items-center justify-between gap-2 rounded-md border border-gray-200 px-3 py-2 text-sm">
+                  <span className="font-medium text-gray-700">{part.label}</span>
+                  <select
+                    value={newPartPreferences[part.code] ?? "neutral"}
+                    onChange={(event) =>
+                      setNewPartPreferences((prev) => ({
+                        ...prev,
+                        [part.code]: event.target.value as Preference,
+                      }))
+                    }
+                    className="h-8 rounded-md border border-gray-300 bg-white px-2 text-xs focus:outline-none focus:ring-2 focus:ring-gray-900/15"
+                  >
+                    {PREFERENCE_OPTIONS.map((opt) => (
+                      <option key={opt} value={opt}>{PREF_OPTION_LABELS[opt]}</option>
+                    ))}
+                  </select>
+                </label>
+              ))}
+            </div>
+          ) : null}
           {error ? <p className="mt-3 text-sm text-red-600">{error}</p> : null}
         </CardContent>
       </Card>
@@ -194,31 +255,31 @@ export default function EmployeesPage() {
             <CardTitle className="text-base">직원 목록</CardTitle>
           </CardHeader>
           <CardContent className="p-0">
+            <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead className="pl-4">이름</TableHead>
-                  <TableHead>오픈</TableHead>
-                  <TableHead>미들</TableHead>
-                  <TableHead>마감</TableHead>
+                  {shiftParts.map((part) => (
+                    <TableHead key={part.code}>{part.label}</TableHead>
+                  ))}
                   <TableHead className="pr-4 text-right">작업</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {employees.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="h-28 text-center text-gray-400">
+                    <TableCell colSpan={shiftParts.length + 2} className="h-28 text-center text-gray-400">
                       등록된 직원이 없습니다.
                     </TableCell>
                   </TableRow>
                 ) : (
                   employees.map((emp) => {
                     const isEditing = editingId === emp.id;
-                    const preferences = [
-                      { key: "openPreference" as const, value: emp.openPreference },
-                      { key: "middlePreference" as const, value: emp.middlePreference },
-                      { key: "closePreference" as const, value: emp.closePreference },
-                    ];
+                    const preferences = shiftParts.map((part) => ({
+                      part,
+                      value: getPartPreference(emp, part.code),
+                    }));
 
                     return (
                       <TableRow key={emp.id}>
@@ -235,17 +296,23 @@ export default function EmployeesPage() {
                             emp.name
                           )}
                         </TableCell>
-                        {preferences.map(({ key, value }) => (
-                          <TableCell key={key}>
+                        {preferences.map(({ part, value }) => (
+                          <TableCell key={part.code}>
                             {isEditing ? (
                               <select
-                                value={editForm?.[key] ?? "neutral"}
+                                value={editForm?.partPreferences[part.code] ?? "neutral"}
                                 onChange={(event) =>
-                                  setEditForm((prev) => prev ? { ...prev, [key]: event.target.value as Preference } : prev)
+                                  setEditForm((prev) => prev ? {
+                                    ...prev,
+                                    partPreferences: {
+                                      ...prev.partPreferences,
+                                      [part.code]: event.target.value as Preference,
+                                    },
+                                  } : prev)
                                 }
                                 className="h-8 w-24 rounded-lg border border-gray-300 bg-white px-2 text-xs focus:outline-none focus:ring-2 focus:ring-gray-900/15"
                               >
-                                {PREF_OPTIONS.map((opt) => (
+                                {PREFERENCE_OPTIONS.map((opt) => (
                                   <option key={opt} value={opt}>{PREF_OPTION_LABELS[opt]}</option>
                                 ))}
                               </select>
@@ -311,6 +378,7 @@ export default function EmployeesPage() {
                 )}
               </TableBody>
             </Table>
+            </div>
           </CardContent>
         </Card>
       )}

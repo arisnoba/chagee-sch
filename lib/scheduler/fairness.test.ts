@@ -12,6 +12,7 @@ function employee(id: number, name = `직원${id}`): Employee {
     openPreference: "neutral",
     middlePreference: "neutral",
     closePreference: "neutral",
+    partPreferences: "{}",
     isActive: true,
     createdAt: null,
   };
@@ -71,5 +72,17 @@ describe("calcFairnessScore", () => {
 
     expect(ranked[0].name).toBe("심야");
     expect(ranked[0].fairnessScore).toBeGreaterThan(ranked[1].fairnessScore);
+  });
+
+  it("커스텀 파트 성향을 JSON에서 읽어 부담에 반영한다", () => {
+    const parts: WorkShiftPart[] = [
+      { code: "part-1", label: "오전", startTime: "09:00", endTime: "18:00", sortOrder: 0 },
+    ];
+    const preferred = { ...employee(1), partPreferences: JSON.stringify({ "part-1": "like" }) };
+    const disliked = { ...employee(2), partPreferences: JSON.stringify({ "part-1": "dislike" }) };
+
+    expect(calcFairnessScore(disliked, [log(2, "part-1")], parts)).toBeGreaterThan(
+      calcFairnessScore(preferred, [log(1, "part-1")], parts)
+    );
   });
 });

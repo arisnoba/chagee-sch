@@ -9,6 +9,7 @@ export const employees = sqliteTable("employees", {
   openPreference: text("open_preference", { enum: ["like", "neutral", "dislike"] }).notNull().default("neutral"),
   middlePreference: text("middle_preference", { enum: ["like", "neutral", "dislike"] }).notNull().default("neutral"),
   closePreference: text("close_preference", { enum: ["like", "neutral", "dislike"] }).notNull().default("neutral"),
+  partPreferences: text("part_preferences").notNull().default("{}"),
   isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
   createdAt: text("created_at").default(sql`(datetime('now'))`),
 });

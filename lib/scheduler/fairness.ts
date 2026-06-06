@@ -1,9 +1,9 @@
 import type { Employee, ShiftLog } from "@/lib/db/schema";
 import { DEFAULT_SHIFT_PARTS, type WorkShiftPart } from "@/lib/shift-parts";
+import { getPartPreference, type Preference } from "@/lib/employee-preferences";
 
 export type ShiftType = string;
 export type DayType = "weekday" | "weekend" | "holiday";
-export type Preference = "like" | "neutral" | "dislike";
 
 const DAY_REWARD: Record<DayType, number> = {
   weekday: 1,
@@ -28,13 +28,6 @@ const DEFAULT_WORK_SHIFT_PARTS = DEFAULT_SHIFT_PARTS.map(({ code, label, startTi
   endTime,
   sortOrder,
 }));
-
-function getPreference(employee: Employee, shiftType: ShiftType): Preference {
-  if (shiftType === "open") return employee.openPreference as Preference;
-  if (shiftType === "middle") return employee.middlePreference as Preference;
-  if (shiftType === "close") return employee.closePreference as Preference;
-  return "neutral";
-}
 
 function parseTimeMinutes(value: string): number | null {
   const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(value);
@@ -70,7 +63,7 @@ export function calcBurden(
 ): number {
   if (shiftType === "off") return 0;
   const base = getBaseBurden(shiftType, shiftParts);
-  const multiplier = PREFERENCE_MULTIPLIER[getPreference(employee, shiftType)];
+  const multiplier = PREFERENCE_MULTIPLIER[getPartPreference(employee, shiftType)];
   return base * multiplier;
 }
 

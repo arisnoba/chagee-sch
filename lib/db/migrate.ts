@@ -1,5 +1,10 @@
 import { createClient } from "@libsql/client";
 
+async function hasColumn(client: ReturnType<typeof createClient>, tableName: string, columnName: string): Promise<boolean> {
+  const result = await client.execute(`PRAGMA table_info(${tableName})`);
+  return result.rows.some((row) => row.name === columnName);
+}
+
 export async function migrate() {
   const client = createClient({
     url: process.env.TURSO_DATABASE_URL!,
@@ -15,9 +20,26 @@ export async function migrate() {
       open_preference TEXT NOT NULL DEFAULT 'neutral',
       middle_preference TEXT NOT NULL DEFAULT 'neutral',
       close_preference TEXT NOT NULL DEFAULT 'neutral',
+      part_preferences TEXT NOT NULL DEFAULT '{}',
       is_active INTEGER NOT NULL DEFAULT 1,
       created_at TEXT DEFAULT (datetime('now'))
     )
+  `);
+
+  if (!(await hasColumn(client, "employees", "part_preferences"))) {
+    await client.execute("ALTER TABLE employees ADD COLUMN part_preferences TEXT NOT NULL DEFAULT '{}'");
+  }
+
+  await client.execute(`
+    UPDATE employees
+    SET part_preferences = json_object(
+      'open', open_preference,
+      'middle', middle_preference,
+      'close', close_preference
+    )
+    WHERE part_preferences IS NULL
+      OR part_preferences = ''
+      OR part_preferences = '{}'
   `);
 
   await client.execute(`

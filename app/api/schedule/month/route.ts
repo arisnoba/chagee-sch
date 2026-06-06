@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { apiError, apiInternalError } from "@/lib/api/response";
 import { and, gte, inArray, lte } from "drizzle-orm";
 import { db } from "@/lib/db/client";
+import { migrate } from "@/lib/db/migrate";
 import { employees, schedules, shiftLogs } from "@/lib/db/schema";
 import { getKoreaHolidaysForDates, holidayNameMap } from "@/lib/calendar/koreaHolidays";
 import { getActiveShiftParts } from "@/lib/db/shiftParts";
@@ -22,6 +23,7 @@ function getMonthDates(month: string): string[] {
 
 export async function GET(req: Request) {
   try {
+    await migrate();
     const url = new URL(req.url);
     const month = url.searchParams.get("month");
 

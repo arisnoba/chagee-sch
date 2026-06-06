@@ -527,11 +527,11 @@ burden = 1.0 + 0.5 * earliness + 0.5 * lateness
 
 ### F2 — 파트별 성향 모델
 
-- [ ] `employees.part_preferences` JSON 컬럼 추가
-- [ ] 기존 `open/middle/close_preference` 값을 JSON으로 백필
-- [ ] `getPartPreference(employee, shiftCode)` 공통 접근자 추가
-- [ ] `fairness.ts`와 `generate.ts`의 성향 조회 중복 제거
-- [ ] 직원 관리 UI/API에 활성 파트별 성향 입력 추가
+- [x] `employees.part_preferences` JSON 컬럼 추가
+- [x] 기존 `open/middle/close_preference` 값을 JSON으로 백필
+- [x] `getPartPreference(employee, shiftCode)` 공통 접근자 추가
+- [x] `fairness.ts`와 `generate.ts`의 성향 조회 중복 제거
+- [x] 직원 관리 UI/API에 활성 파트별 성향 입력 추가
 
 **주의**
 - 이 단계는 스키마와 UI가 함께 바뀌므로 F1과 별도 커밋으로 진행한다.
@@ -552,8 +552,8 @@ burden = 1.0 + 0.5 * earliness + 0.5 * lateness
 
 ### 검증 계획
 
-- [ ] `npm test`
-- [ ] `npm run lint`
-- [ ] `npm run build`
+- [x] `npm test`
+- [x] `npm run lint`
+- [x] `npm run build`
 - [ ] 커스텀 파트 4~5개 설정 후 `/api/fairness` 점수가 근무일 수로만 평탄화되지 않는지 확인
 - [ ] `/schedule/generate`에서 시간 기반 부담이 배정 사유와 점수에 일관되게 반영되는지 수동 확인
