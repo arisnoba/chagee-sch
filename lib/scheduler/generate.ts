@@ -88,7 +88,8 @@ function getShiftReasons(
   emp: EmployeeWithScore,
   shift: string,
   shiftParts: WorkShiftPart[],
-  previousLastShiftIds: Set<number>
+  previousLastShiftIds: Set<number>,
+  options: { unavoidableCloseOpen?: boolean } = {}
 ): string[] {
   const reasons = [`공평 지표 ${emp.fairnessScore.toFixed(1)}점`];
   reasons.push(getPreferenceLabel(emp, shift));
@@ -98,6 +99,7 @@ function getShiftReasons(
 
   if (shift === lastShift) reasons.push("마지막 파트 인원 우선 배정");
   if (previousLastShiftIds.has(emp.id) && shift !== firstShift) reasons.push("마지막 파트 다음날 첫 파트 회피");
+  if (options.unavoidableCloseOpen) reasons.push("마지막 파트 다음날 첫 파트 불가피");
 
   return reasons;
 }
@@ -136,7 +138,7 @@ function assignShifts(
   for (const emp of rankedWorkers) {
     const prefOrder = getShiftPreferenceOrder(emp, shiftParts);
     const shiftOrder = previousLastShiftIds.has(emp.id) && firstShift
-      ? [...prefOrder.filter((shift) => shift !== firstShift), firstShift]
+      ? prefOrder.filter((shift) => shift !== firstShift)
       : prefOrder;
     let assigned = false;
 
@@ -154,6 +156,26 @@ function assignShifts(
       }
     }
 
+    if (!assigned && firstShift && previousLastShiftIds.has(emp.id) && cap[firstShift] > 0) {
+      const swappableSlot = slots.find(
+        (slot) => slot.shiftType !== firstShift && !previousLastShiftIds.has(slot.employeeId)
+      );
+
+      if (swappableSlot) {
+        const swapShift = swappableSlot.shiftType;
+        swappableSlot.shiftType = firstShift;
+        swappableSlot.reasons = [...(swappableSlot.reasons ?? []), "마지막 파트 다음날 첫 파트 방지 스왑"];
+        slots.push({
+          shiftType: swapShift,
+          employeeId: emp.id,
+          employeeName: emp.name,
+          reasons: getShiftReasons(emp, swapShift, shiftParts, previousLastShiftIds),
+        });
+        cap[firstShift]--;
+        assigned = true;
+      }
+    }
+
     if (!assigned) {
       for (const shift of [...shiftParts].reverse().map((part) => part.code)) {
         if (cap[shift] > 0) {
@@ -161,7 +183,9 @@ function assignShifts(
             shiftType: shift,
             employeeId: emp.id,
             employeeName: emp.name,
-            reasons: getShiftReasons(emp, shift, shiftParts, previousLastShiftIds),
+            reasons: getShiftReasons(emp, shift, shiftParts, previousLastShiftIds, {
+              unavoidableCloseOpen: firstShift === shift && previousLastShiftIds.has(emp.id),
+            }),
           });
           cap[shift]--;
           break;
